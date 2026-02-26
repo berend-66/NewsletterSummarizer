@@ -17,7 +17,8 @@ export function middleware(request: NextRequest) {
   const cookie = request.cookies.get('auth_token')
   if (cookie?.value === password) return NextResponse.next()
 
-  if (request.nextUrl.pathname === '/api/auth/login') {
+  const publicPaths = ['/api/health', '/api/auth/login']
+  if (publicPaths.some(p => request.nextUrl.pathname.startsWith(p))) {
     return NextResponse.next()
   }
 
