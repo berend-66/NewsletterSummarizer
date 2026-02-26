@@ -45,20 +45,35 @@ function getSqliteDb(): Database.Database {
   return sqliteDb
 }
 
+function sqliteValue(v: unknown): unknown {
+  if (typeof v === 'boolean') return v ? 1 : 0
+  return v
+}
+
 function convertPgStyleToSqlite(
   queryText: string,
   values: unknown[] = []
 ): { sql: string; params: unknown[] } {
   const params: unknown[] = []
-  const sql = queryText
+  let sql = queryText
     .replace(/\$(\d+)/g, (_match, group: string) => {
-      params.push(values[Number(group) - 1])
+      params.push(sqliteValue(values[Number(group) - 1]))
       return '?'
     })
     .replace(/::jsonb/gi, '')
     .replace(/::timestamptz/gi, '')
     .replace(/::vector/gi, '')
+    .replace(/::int\b/gi, '')
+
+  sql = sql.replace(
+    /\bNOW\(\)\s*-\s*\(\s*\?\s*\*\s*INTERVAL\s+'1 day'\s*\)/gi,
+    "datetime('now', '-' || ? || ' days')"
+  )
+
+  sql = sql
     .replace(/\bNOW\(\)/gi, "datetime('now')")
+    .replace(/\bTRUE\b/gi, '1')
+    .replace(/\bFALSE\b/gi, '0')
 
   return { sql, params }
 }
@@ -66,10 +81,12 @@ function convertPgStyleToSqlite(
 async function initPostgres(): Promise<void> {
   const activePool = getPgPool()
 
+  let hasVector = false
   try {
     await activePool.query(`CREATE EXTENSION IF NOT EXISTS vector;`)
+    hasVector = true
   } catch (error) {
-    console.warn('pgvector extension is not available:', error)
+    console.warn('pgvector extension is not available; embeddings table will use TEXT fallback')
   }
 
   await activePool.query(`
@@ -143,33 +160,42 @@ async function initPostgres(): Promise<void> {
       PRIMARY KEY (email_id, user_email)
     );
 
-    CREATE TABLE IF NOT EXISTS item_embeddings (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      email_id TEXT NOT NULL,
-      model TEXT NOT NULL,
-      content TEXT NOT NULL,
-      embedding VECTOR(1536) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(user_id, email_id)
-    );
-
     CREATE INDEX IF NOT EXISTS idx_summaries_user_email ON summaries(user_email);
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
-    CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
   `)
 
+  const embeddingType = hasVector ? 'VECTOR(1536)' : 'TEXT'
   try {
     await activePool.query(`
-      CREATE INDEX IF NOT EXISTS idx_item_embeddings_embedding
-      ON item_embeddings
-      USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100);
+      CREATE TABLE IF NOT EXISTS item_embeddings (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        email_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        content TEXT NOT NULL,
+        embedding ${embeddingType} NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, email_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
     `)
   } catch (error) {
-    console.warn('Could not create pgvector ivfflat index:', error)
+    console.warn('Could not create item_embeddings table:', error)
+  }
+
+  if (hasVector) {
+    try {
+      await activePool.query(`
+        CREATE INDEX IF NOT EXISTS idx_item_embeddings_embedding
+        ON item_embeddings
+        USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100);
+      `)
+    } catch (error) {
+      console.warn('Could not create pgvector ivfflat index:', error)
+    }
   }
 }
 
