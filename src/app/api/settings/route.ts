@@ -30,10 +30,37 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function isValidUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export async function PUT(request: NextRequest) {
   try {
     const userId = resolveRuntimeUserId(request)
     const body = await request.json()
+
+    if (body.rssFeeds !== undefined) {
+      if (!Array.isArray(body.rssFeeds)) {
+        return NextResponse.json({ error: 'rssFeeds must be an array' }, { status: 400 })
+      }
+      const invalid = body.rssFeeds.filter((f: unknown) => typeof f !== 'string' || !isValidUrl(f))
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { error: `Invalid feed URLs: ${invalid.join(', ')}` },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (body.autoDetect !== undefined && typeof body.autoDetect !== 'boolean') {
+      return NextResponse.json({ error: 'autoDetect must be a boolean' }, { status: 400 })
+    }
+
     const settings = await updateUserSettings(userId, body)
     const feedHealth = await getFeedHealthMetrics(userId)
     return NextResponse.json({
