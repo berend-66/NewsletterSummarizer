@@ -81,10 +81,12 @@ function convertPgStyleToSqlite(
 async function initPostgres(): Promise<void> {
   const activePool = getPgPool()
 
+  let hasVector = false
   try {
     await activePool.query(`CREATE EXTENSION IF NOT EXISTS vector;`)
+    hasVector = true
   } catch (error) {
-    console.warn('pgvector extension is not available:', error)
+    console.warn('pgvector extension is not available; embeddings table will use TEXT fallback')
   }
 
   await activePool.query(`
@@ -158,33 +160,42 @@ async function initPostgres(): Promise<void> {
       PRIMARY KEY (email_id, user_email)
     );
 
-    CREATE TABLE IF NOT EXISTS item_embeddings (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      email_id TEXT NOT NULL,
-      model TEXT NOT NULL,
-      content TEXT NOT NULL,
-      embedding VECTOR(1536) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(user_id, email_id)
-    );
-
     CREATE INDEX IF NOT EXISTS idx_summaries_user_email ON summaries(user_email);
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
-    CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
   `)
 
+  const embeddingType = hasVector ? 'VECTOR(1536)' : 'TEXT'
   try {
     await activePool.query(`
-      CREATE INDEX IF NOT EXISTS idx_item_embeddings_embedding
-      ON item_embeddings
-      USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100);
+      CREATE TABLE IF NOT EXISTS item_embeddings (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        email_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        content TEXT NOT NULL,
+        embedding ${embeddingType} NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, email_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
     `)
   } catch (error) {
-    console.warn('Could not create pgvector ivfflat index:', error)
+    console.warn('Could not create item_embeddings table:', error)
+  }
+
+  if (hasVector) {
+    try {
+      await activePool.query(`
+        CREATE INDEX IF NOT EXISTS idx_item_embeddings_embedding
+        ON item_embeddings
+        USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100);
+      `)
+    } catch (error) {
+      console.warn('Could not create pgvector ivfflat index:', error)
+    }
   }
 }
 
