@@ -7,6 +7,20 @@ import { resolveRuntimeUserId } from '@/lib/runtime-user'
 
 export const dynamic = 'force-dynamic'
 
+function createEmptyDigest(totalNewsletters: number) {
+  return {
+    generatedAt: new Date().toISOString(),
+    totalNewsletters,
+    themes: [] as Array<{
+      theme: string
+      description: string
+      relatedNewsletters: string[]
+    }>,
+    highlights: [] as string[],
+    actionItems: [] as string[],
+  }
+}
+
 function parseConfiguredFeeds(): string[] {
   const fromEnv = process.env.RSS_FEEDS || ''
   return fromEnv
@@ -83,6 +97,16 @@ export async function GET(request: NextRequest) {
         // Always unlock, even if there's an error
         unlockAnalysis(userEmail)
       }
+    }
+
+    if (summarize) {
+      return NextResponse.json({
+        summaries: [],
+        digest: createEmptyDigest(newsletters.length),
+        rawCount: newsletters.length,
+        cacheStats: { hits: 0, misses: 0 },
+        feedHealth,
+      })
     }
 
     // Return raw newsletter data without summaries

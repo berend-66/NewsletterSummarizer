@@ -49,6 +49,16 @@ interface DigestData {
   rawCount: number
 }
 
+function createEmptyDigest(totalNewsletters: number): CombinedDigest {
+  return {
+    generatedAt: new Date().toISOString(),
+    totalNewsletters,
+    themes: [],
+    highlights: [],
+    actionItems: [],
+  }
+}
+
 export default function Home() {
   const [digestData, setDigestData] = useState<DigestData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -106,7 +116,16 @@ export default function Home() {
       const res = await fetch(`/api/newsletters?days=${daysBack}&summarize=true`, { signal })
       if (res.ok) {
         const data = await res.json()
-        setDigestData(data)
+        const summaries: NewsletterSummary[] = Array.isArray(data?.summaries) ? data.summaries : []
+        const digest: CombinedDigest = data?.digest ?? createEmptyDigest(summaries.length)
+        const rawCount =
+          typeof data?.rawCount === 'number' ? data.rawCount : summaries.length
+
+        setDigestData({
+          summaries,
+          digest,
+          rawCount,
+        })
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
