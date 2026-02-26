@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { summarizeNewsletters } from '@/lib/ollama-summarizer'
+import { summarizeNewsletters as ollamaSummarize } from '@/lib/ollama-summarizer'
+import { summarizeNewsletters as openaiSummarize } from '@/lib/openai-summarizer'
 import { getFeedHealthMetrics, getUserSettings, upsertFeedHealthMetric } from '@/lib/user-settings'
 import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analysis-lock'
 import { getNewslettersFromRss } from '@/lib/rss-ingestion'
 import { resolveRuntimeUserId } from '@/lib/runtime-user'
+import type { CanonicalNewsletter } from '@/lib/newsletter-model'
+
+function resolveSummarizerProvider(): 'openai' | 'ollama' {
+  const explicit = process.env.SUMMARIZER_PROVIDER
+  if (explicit === 'openai' || explicit === 'ollama') return explicit
+  if (process.env.OPENAI_API_KEY) return 'openai'
+  return 'ollama'
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -46,19 +55,17 @@ export async function GET(request: NextRequest) {
     await Promise.all(rssResult.metrics.map((metric) => upsertFeedHealthMetric(userId, metric)))
     const feedHealth = await getFeedHealthMetrics(userId)
 
-    // If summarize is requested, process with Ollama
     if (summarize && newsletters.length > 0) {
       const userEmail = userId
+      const provider = resolveSummarizerProvider()
 
-      // Check if analysis is already in progress
       if (isAnalysisInProgress(userEmail)) {
         return NextResponse.json(
           { error: 'Analysis already in progress. Please wait for it to complete.' },
-          { status: 429 } // Too Many Requests
+          { status: 429 }
         )
       }
       
-      // Lock analysis for this user
       if (!lockAnalysis(userEmail)) {
         return NextResponse.json(
           { error: 'Failed to start analysis. Please try again.' },
@@ -67,7 +74,18 @@ export async function GET(request: NextRequest) {
       }
       
       try {
-        const { summaries, digest, cacheStats } = await summarizeNewsletters(
+        if (provider === 'openai') {
+          const { summaries, digest } = await openaiSummarize(newsletters)
+          return NextResponse.json({
+            summaries,
+            digest,
+            rawCount: newsletters.length,
+            cacheStats: { hits: 0, misses: summaries.length },
+            feedHealth,
+          })
+        }
+
+        const { summaries, digest, cacheStats } = await ollamaSummarize(
           newsletters, 
           userEmail,
           settings.senderOverrides
@@ -80,7 +98,6 @@ export async function GET(request: NextRequest) {
           feedHealth,
         })
       } finally {
-        // Always unlock, even if there's an error
         unlockAnalysis(userEmail)
       }
     }
