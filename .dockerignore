@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.local
+.env.*.local
+newsletter.db
+*.log
+.git
+.gitignore
+README.md
+AGENTS.md
+.cursor
