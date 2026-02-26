@@ -32,15 +32,15 @@ npm install
 
 ### 2) Configure environment
 
-Create `.env.local`:
+Create `.env.local` (or copy from `.env.example`):
 
 ```env
 # Optional: comma-separated RSS feed URLs
 RSS_FEEDS=https://example.com/feed.xml,https://another.com/rss
 
 # Ollama config
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
+OLLAMA_URL=[REDACTED]
+OLLAMA_MODEL=[REDACTED]
 OLLAMA_CONCURRENCY=2
 
 # Optional: lock down cron endpoint
@@ -138,23 +138,59 @@ src/
 
 ## Railway Deployment Notes
 
-### Persistent storage
+### Production service topology
 
-- Local development defaults to SQLite when `DATABASE_URL` is not set.
-- Production should use PostgreSQL via `DATABASE_URL` (Railway managed Postgres).
-- You can explicitly control provider with `DB_PROVIDER=sqlite|postgres`.
-- Current relational tables: `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`.
+Use three Railway services:
 
-### Scheduler setup on Railway
+1. **`web`** (this repository root) — Next.js app
+2. **`postgres`** — Railway managed PostgreSQL
+3. **`digest-cron`** (`ops/railway/digest-cron`) — scheduled caller for `/api/cron/digest`
 
-Use a Railway cron service/job to call:
+The repository includes:
+
+- Root `railway.json` for the web service (build/start + healthcheck)
+- `ops/railway/digest-cron/railway.json` for the cron worker (`cronSchedule`)
+- `scripts/railway/provision-production.sh` for repeatable provisioning/deploy
+
+### One-command provisioning (CLI)
+
+After linking this directory to your Railway project:
 
 ```bash
-curl -X POST "https://<your-app-domain>/api/cron/digest?days=7" \
-  -H "Authorization: Bearer $CRON_SECRET"
+npm run railway:provision
 ```
 
-Recommended cadence: every 2-6 hours depending on feed freshness and model cost.
+Prerequisites: valid Railway auth (`RAILWAY_API_TOKEN` set or `npx -y @railway/cli login`).
+
+This script will:
+
+- create `postgres`, `web`, and `digest-cron` services (if missing)
+- wire `DATABASE_URL` from Postgres into `web`
+- generate/set `CRON_SECRET` on `web` and propagate it to `digest-cron`
+- deploy `web` from repo root and `digest-cron` from `ops/railway/digest-cron`
+
+### Required production variables (`web` service)
+
+- `NODE_ENV=production`
+- `DB_PROVIDER=postgres`
+- `DATABASE_URL=${{postgres.DATABASE_URL}}`
+- `CRON_SECRET=<long-random-secret>`
+- `OLLAMA_URL=<reachable Ollama endpoint>`
+- `OLLAMA_MODEL=<model-name>`
+
+Optional:
+
+- `RSS_FEEDS` (fallback feeds when user settings are empty)
+- `OPENAI_API_KEY`, `OPENAI_EMBED_MODEL` (semantic search embeddings)
+
+### Health checks
+
+- Railway health path: `/api/health`
+- Endpoint validates DB connectivity and returns `503` if DB is unavailable.
+
+### Scheduler cadence
+
+`digest-cron` defaults to `0 */4 * * *` (every 4 hours). Adjust `cronSchedule` in `ops/railway/digest-cron/railway.json` if needed.
 
 ## Validation
 

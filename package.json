@@ -6,8 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "prestart": "node scripts/validate-env.mjs",
     "lint": "next lint",
-    "test": "node --test --experimental-strip-types src/**/*.test.ts"
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "railway:provision": "bash ./scripts/railway/provision-production.sh"
   },
   "dependencies": {
     "@azure/msal-node": "^2.6.0",

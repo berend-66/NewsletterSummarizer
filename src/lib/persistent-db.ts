@@ -8,6 +8,13 @@ let pgPool: Pool | null = null
 let sqliteDb: Database.Database | null = null
 let initialized = false
 
+function normalizeSqliteParam(value: unknown): unknown {
+  // better-sqlite3 does not accept booleans directly.
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (value instanceof Date) return value.toISOString()
+  return value
+}
+
 function resolveProvider(): DatabaseProvider {
   if (process.env.DB_PROVIDER === 'sqlite') return 'sqlite'
   if (process.env.DB_PROVIDER === 'postgres') return 'postgres'
@@ -45,14 +52,14 @@ function getSqliteDb(): Database.Database {
   return sqliteDb
 }
 
-function convertPgStyleToSqlite(
+export function convertPgStyleToSqlite(
   queryText: string,
   values: unknown[] = []
 ): { sql: string; params: unknown[] } {
   const params: unknown[] = []
   const sql = queryText
     .replace(/\$(\d+)/g, (_match, group: string) => {
-      params.push(values[Number(group) - 1])
+      params.push(normalizeSqliteParam(values[Number(group) - 1]))
       return '?'
     })
     .replace(/::jsonb/gi, '')
