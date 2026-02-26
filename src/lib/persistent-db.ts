@@ -45,20 +45,35 @@ function getSqliteDb(): Database.Database {
   return sqliteDb
 }
 
+function sqliteValue(v: unknown): unknown {
+  if (typeof v === 'boolean') return v ? 1 : 0
+  return v
+}
+
 function convertPgStyleToSqlite(
   queryText: string,
   values: unknown[] = []
 ): { sql: string; params: unknown[] } {
   const params: unknown[] = []
-  const sql = queryText
+  let sql = queryText
     .replace(/\$(\d+)/g, (_match, group: string) => {
-      params.push(values[Number(group) - 1])
+      params.push(sqliteValue(values[Number(group) - 1]))
       return '?'
     })
     .replace(/::jsonb/gi, '')
     .replace(/::timestamptz/gi, '')
     .replace(/::vector/gi, '')
+    .replace(/::int\b/gi, '')
+
+  sql = sql.replace(
+    /\bNOW\(\)\s*-\s*\(\s*\?\s*\*\s*INTERVAL\s+'1 day'\s*\)/gi,
+    "datetime('now', '-' || ? || ' days')"
+  )
+
+  sql = sql
     .replace(/\bNOW\(\)/gi, "datetime('now')")
+    .replace(/\bTRUE\b/gi, '1')
+    .replace(/\bFALSE\b/gi, '0')
 
   return { sql, params }
 }
