@@ -1,17 +1,12 @@
-import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { NextRequest, NextResponse } from 'next/server'
 import { getProgress, getProgressPercentage, getEstimatedTimeRemaining } from '@/lib/progress-tracker'
+import { resolveRuntimeUserId } from '@/lib/runtime-user'
 
-export async function GET() {
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const userEmail = session.user.email
+    const userEmail = resolveRuntimeUserId(request)
     const progress = getProgress(userEmail)
     
     if (!progress) {

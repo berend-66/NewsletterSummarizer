@@ -1,16 +1,13 @@
 'use client'
 
-import { useSession, signIn, signOut } from 'next-auth/react'
 import { useState, useEffect, useRef } from 'react'
 import { 
   Mail, 
   RefreshCw, 
   Settings, 
-  LogOut, 
   Sparkles,
   ChevronRight,
   Clock,
-  TrendingUp,
   Lightbulb,
   CheckCircle2,
   Loader2,
@@ -53,7 +50,6 @@ interface DigestData {
 }
 
 export default function Home() {
-  const { data: session, status } = useSession()
   const [digestData, setDigestData] = useState<DigestData | null>(null)
   const [loading, setLoading] = useState(false)
   const [daysBack, setDaysBack] = useState(7)
@@ -69,8 +65,6 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const fetchDigest = async () => {
-    if (!session) return
-    
     // Cancel any existing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -102,7 +96,7 @@ export default function Home() {
           }
         }
       } catch (error) {
-        if (error.name !== 'AbortError') {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
           console.error('Error fetching progress:', error)
         }
       }
@@ -115,7 +109,7 @@ export default function Home() {
         setDigestData(data)
       }
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if (error instanceof Error && error.name === 'AbortError') {
         console.log('Request cancelled')
       } else {
         console.error('Error fetching digest:', error)
@@ -157,25 +151,14 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (session && !demoMode) {
+    if (!demoMode) {
       fetchDigest()
     }
-  }, [session])
+    // fetchDigest is intentionally stable enough for mount/demo toggles in this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoMode])
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen mesh-bg flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-coral-500 animate-spin" />
-          <p className="text-ink-300">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show dashboard if signed in OR in demo mode
-  if (session || demoMode) {
-    return (
+  return (
       <div className="min-h-screen mesh-bg">
         {/* Header */}
         <header className="border-b border-ink-700/50 backdrop-blur-sm sticky top-0 z-10">
@@ -194,7 +177,7 @@ export default function Home() {
                   )}
                 </h1>
                 <p className="text-xs text-ink-400">
-                  {demoMode ? 'Viewing sample newsletters' : session?.user?.email}
+                  {demoMode ? 'Viewing sample newsletters' : 'RSS-powered digest'}
                 </p>
               </div>
             </div>
@@ -209,22 +192,13 @@ export default function Home() {
                   Exit Demo
                 </button>
               ) : (
-                <>
-                  <Link
-                    href="/settings"
-                    className="p-2.5 rounded-lg bg-ink-800/50 hover:bg-ink-700/50 transition-colors"
-                    title="Settings"
-                  >
-                    <Settings className="w-5 h-5 text-ink-300" />
-                  </Link>
-                  <button
-                    onClick={() => signOut()}
-                    className="p-2.5 rounded-lg bg-ink-800/50 hover:bg-ink-700/50 transition-colors"
-                    title="Sign out"
-                  >
-                    <LogOut className="w-5 h-5 text-ink-300" />
-                  </button>
-                </>
+                <Link
+                  href="/settings"
+                  className="p-2.5 rounded-lg bg-ink-800/50 hover:bg-ink-700/50 transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5 text-ink-300" />
+                </Link>
               )}
             </div>
           </div>
@@ -249,18 +223,27 @@ export default function Home() {
             </div>
             
             {!demoMode && (
-              <button
-                onClick={fetchDigest}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-mint-500 to-mint-600 hover:from-mint-600 hover:to-mint-500 text-ink-950 font-medium rounded-lg transition-all duration-200 disabled:opacity-50"
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
-                {loading ? 'Analyzing...' : 'Refresh'}
-              </button>
+              <>
+                <button
+                  onClick={fetchDigest}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-mint-500 to-mint-600 hover:from-mint-600 hover:to-mint-500 text-ink-950 font-medium rounded-lg transition-all duration-200 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  {loading ? 'Analyzing...' : 'Refresh'}
+                </button>
+                <button
+                  onClick={loadDemoData}
+                  className="flex items-center gap-2 px-4 py-2 bg-ink-800/50 hover:bg-ink-700/50 border border-ink-700/50 text-ink-200 font-medium rounded-lg transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  Demo Data
+                </button>
+              </>
             )}
 
             {digestData && (
@@ -487,7 +470,7 @@ export default function Home() {
                   <Mail className="w-12 h-12 text-ink-500 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold mb-2">No newsletters found</h3>
                   <p className="text-ink-400 mb-4">
-                    We couldn't find any newsletters in the selected time period.
+                    We could not find any newsletters in the selected time period.
                   </p>
                   <Link
                     href="/settings"
@@ -502,62 +485,5 @@ export default function Home() {
           )}
         </main>
       </div>
-    )
-  }
-
-  // Landing page when not signed in
-  return (
-    <div className="min-h-screen mesh-bg flex items-center justify-center p-4">
-      <div className="glass-card p-8 md:p-12 max-w-lg w-full text-center animate-fade-in">
-        <div className="mb-8">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-coral-500 to-coral-600 flex items-center justify-center">
-            <Mail className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl md:text-4xl font-display font-bold mb-3">
-            Newsletter Digest
-          </h1>
-          <p className="text-ink-300 text-lg">
-            AI-powered summaries of your newsletters, delivered when you need them.
-          </p>
-        </div>
-
-        <div className="space-y-4 mb-8 text-left">
-          <div className="flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-mint-500 mt-0.5 flex-shrink-0" />
-            <p className="text-ink-200">Smart summaries with key points extracted</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <TrendingUp className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-            <p className="text-ink-200">Identify themes across multiple newsletters</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <Clock className="w-5 h-5 text-coral-400 mt-0.5 flex-shrink-0" />
-            <p className="text-ink-200">Scheduled digests on Monday & Wednesday</p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <button
-            onClick={() => signIn('azure-ad')}
-            className="w-full py-4 px-6 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-500 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-coral-500/25"
-          >
-            <Mail className="w-5 h-5" />
-            Sign in with Microsoft 365
-          </button>
-          
-          <button
-            onClick={loadDemoData}
-            className="w-full py-4 px-6 bg-ink-800/50 hover:bg-ink-700/50 border border-ink-700/50 text-ink-200 font-semibold rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            <Play className="w-5 h-5" />
-            Try Demo Mode
-          </button>
-        </div>
-        
-        <p className="mt-4 text-sm text-ink-400">
-          We'll access your emails to find and summarize newsletters.
-        </p>
-      </div>
-    </div>
   )
 }

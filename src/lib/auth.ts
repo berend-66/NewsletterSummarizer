@@ -1,6 +1,10 @@
 import { NextAuthOptions } from 'next-auth'
 import AzureADProvider from 'next-auth/providers/azure-ad'
 
+/**
+ * @deprecated RSS-first mode no longer requires Microsoft authentication for core flows.
+ * This config remains only for temporary backward compatibility.
+ */
 export const authOptions: NextAuthOptions = {
   providers: [
     AzureADProvider({

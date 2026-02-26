@@ -1,5 +1,9 @@
 import { Client } from '@microsoft/microsoft-graph-client'
 
+/**
+ * @deprecated RSS ingestion is the primary path. This module is retained temporarily
+ * for compatibility and can be removed once Graph auth and legacy flows are dropped.
+ */
 export interface EmailMessage {
   id: string
   subject: string

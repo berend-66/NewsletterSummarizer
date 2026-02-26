@@ -1,9 +1,9 @@
-import { EmailMessage } from './microsoft-graph'
+import type { CanonicalNewsletter } from './newsletter-model'
 
 /**
  * Extract the original sender from a forwarded email
  */
-export function extractOriginalSender(email: EmailMessage): {
+export function extractOriginalSender(email: CanonicalNewsletter): {
   name: string
   address: string
 } {
@@ -127,7 +127,7 @@ export function getSenderOverride(senderEmail: string, overrides: Record<string,
  * Get the best display name for a newsletter sender
  */
 export function getNewsletterDisplayName(
-  email: EmailMessage,
+  email: CanonicalNewsletter,
   senderOverrides: Record<string, string> = {}
 ): { name: string; address: string } {
   // First, extract the original sender from forwarded email

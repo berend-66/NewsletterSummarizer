@@ -1,14 +1,11 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
-  Mail,
+  Rss,
   Plus,
   X,
-  Save,
   Loader2,
   Wand2,
   Calendar,
@@ -21,11 +18,24 @@ import Link from 'next/link'
 
 interface UserSettings {
   userId: string
+  rssFeeds: string[]
+  feedHealth?: FeedHealthMetric[]
   newsletterSenders: string[]
   senderOverrides: Record<string, string>
   autoDetect: boolean
   digestDays: ('monday' | 'wednesday')[]
   digestTime: string
+}
+
+interface FeedHealthMetric {
+  feedUrl: string
+  lastCheckedAt: string
+  lastSuccessAt: string | null
+  consecutiveFailures: number
+  lastError: string | null
+  lastHttpStatus: number | null
+  lastDurationMs: number | null
+  lastItemCount: number
 }
 
 const COMMON_NEWSLETTERS = [
@@ -40,21 +50,14 @@ const COMMON_NEWSLETTERS = [
 ]
 
 export default function SettingsPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [newFeed, setNewFeed] = useState('')
   const [newSender, setNewSender] = useState('')
   const [newOverrideEmail, setNewOverrideEmail] = useState('')
   const [newOverrideName, setNewOverrideName] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/')
-    }
-  }, [status, router])
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -63,18 +66,33 @@ export default function SettingsPage() {
         if (res.ok) {
           const data = await res.json()
           setSettings(data)
+        } else {
+          const errorData = await res.json().catch(() => ({}))
+          setLoadError(errorData.error || 'Failed to load settings')
         }
       } catch (error) {
         console.error('Error fetching settings:', error)
+        setLoadError('Failed to load settings')
       } finally {
         setLoading(false)
       }
     }
 
-    if (session) {
-      fetchSettings()
-    }
-  }, [session])
+    fetchSettings()
+  }, [])
+
+  const addRssFeed = async (feedUrl: string) => {
+    if (!feedUrl.trim() || !settings) return
+    const nextFeeds = Array.from(new Set([...settings.rssFeeds, feedUrl.trim()]))
+    await updateSettings({ rssFeeds: nextFeeds })
+    setNewFeed('')
+  }
+
+  const removeRssFeed = async (feedUrl: string) => {
+    if (!settings) return
+    const nextFeeds = settings.rssFeeds.filter((feed) => feed !== feedUrl)
+    await updateSettings({ rssFeeds: nextFeeds })
+  }
 
   const addSender = async (sender: string) => {
     if (!sender.trim()) return
@@ -116,7 +134,6 @@ export default function SettingsPage() {
   }
 
   const updateSettings = async (updates: Partial<UserSettings>) => {
-    setSaving(true)
     try {
       const res = await fetch('/api/settings', {
         method: 'PUT',
@@ -131,8 +148,6 @@ export default function SettingsPage() {
       }
     } catch (error) {
       showMessage('error', 'Failed to save settings')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -170,7 +185,7 @@ export default function SettingsPage() {
     updateSettings({ senderOverrides: newOverrides })
   }
 
-  if (status === 'loading' || loading) {
+  if (loading) {
     return (
       <div className="min-h-screen mesh-bg flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-coral-500 animate-spin" />
@@ -178,8 +193,17 @@ export default function SettingsPage() {
     )
   }
 
-  if (!session || !settings) {
-    return null
+  if (!settings) {
+    return (
+      <div className="min-h-screen mesh-bg flex items-center justify-center p-4">
+        <div className="glass-card p-6 max-w-lg w-full text-center">
+          <h2 className="text-lg font-display font-bold mb-2">Unable to load settings</h2>
+          <p className="text-sm text-ink-400">
+            {loadError || 'The settings API returned no data.'}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -217,25 +241,25 @@ export default function SettingsPage() {
         {/* Newsletter Sources */}
         <section className="glass-card p-6 animate-slide-up">
           <div className="flex items-center gap-2 mb-4">
-            <Mail className="w-5 h-5 text-coral-500" />
-            <h2 className="text-lg font-display font-bold">Newsletter Sources</h2>
+            <Rss className="w-5 h-5 text-coral-500" />
+            <h2 className="text-lg font-display font-bold">RSS Feeds</h2>
           </div>
           <p className="text-sm text-ink-400 mb-6">
-            Add email addresses or domains of newsletters you want to track.
+            Add RSS/Atom feed URLs to ingest newsletters without email forwarding.
           </p>
 
-          {/* Add new sender */}
+          {/* Add new feed */}
           <div className="flex gap-2 mb-6">
             <input
               type="text"
-              value={newSender}
-              onChange={(e) => setNewSender(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addSender(newSender)}
-              placeholder="e.g., newsletter@example.com or example.com"
+              value={newFeed}
+              onChange={(e) => setNewFeed(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addRssFeed(newFeed)}
+              placeholder="e.g., https://example.com/feed.xml"
               className="flex-1 px-4 py-2.5 bg-ink-800/50 border border-ink-700/50 rounded-lg text-ink-100 placeholder-ink-500 outline-none focus:border-coral-500/50 transition-colors"
             />
             <button
-              onClick={() => addSender(newSender)}
+              onClick={() => addRssFeed(newFeed)}
               className="px-4 py-2.5 bg-coral-500 hover:bg-coral-600 text-white rounded-lg transition-colors flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -243,13 +267,110 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {/* Current senders */}
-          {settings.newsletterSenders.length > 0 && (
+          {/* Current feeds */}
+          {settings.rssFeeds.length > 0 && (
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-ink-400 uppercase tracking-wider mb-3">
-                Active Sources
+                Active Feeds
               </h3>
               <div className="flex flex-wrap gap-2">
+                {settings.rssFeeds.map((feedUrl) => (
+                  <span
+                    key={feedUrl}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-ink-800/50 border border-ink-700/50 rounded-full text-sm text-ink-200"
+                  >
+                    {feedUrl}
+                    <button
+                      onClick={() => removeRssFeed(feedUrl)}
+                      className="p-0.5 hover:bg-ink-700/50 rounded-full transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5 text-ink-400 hover:text-coral-500" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {settings.feedHealth && settings.feedHealth.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-ink-400 uppercase tracking-wider mb-3">
+                Feed Health
+              </h3>
+              <div className="space-y-2">
+                {settings.feedHealth.map((health) => (
+                  <div
+                    key={health.feedUrl}
+                    className="p-3 bg-ink-800/30 border border-ink-700/30 rounded-lg text-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-ink-200 truncate">{health.feedUrl}</span>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          health.consecutiveFailures === 0
+                            ? 'bg-mint-500/20 text-mint-400'
+                            : 'bg-coral-500/20 text-coral-400'
+                        }`}
+                      >
+                        {health.consecutiveFailures === 0 ? 'healthy' : `failures: ${health.consecutiveFailures}`}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-ink-400 flex flex-wrap gap-3">
+                      <span>Last check: {new Date(health.lastCheckedAt).toLocaleString()}</span>
+                      <span>Status: {health.lastHttpStatus ?? 'n/a'}</span>
+                      <span>Items: {health.lastItemCount}</span>
+                      <span>Latency: {health.lastDurationMs ?? 0} ms</span>
+                    </div>
+                    {health.lastError && (
+                      <p className="mt-1 text-xs text-coral-400 truncate">{health.lastError}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick add popular newsletters */}
+          <div>
+            <h3 className="text-sm font-semibold text-ink-400 uppercase tracking-wider mb-3">
+              Feed Filters
+            </h3>
+            <p className="text-sm text-ink-500 mb-3">
+              Optional: restrict ingested items by feed title/source. Enter domains or names.
+            </p>
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newSender}
+                onChange={(e) => setNewSender(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addSender(newSender)}
+                placeholder="e.g., morningbrew or substack"
+                className="flex-1 px-4 py-2.5 bg-ink-800/50 border border-ink-700/50 rounded-lg text-ink-100 placeholder-ink-500 outline-none focus:border-coral-500/50 transition-colors"
+              />
+              <button
+                onClick={() => addSender(newSender)}
+                className="px-4 py-2.5 bg-coral-500 hover:bg-coral-600 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {COMMON_NEWSLETTERS.filter(
+                (nl) => !settings.newsletterSenders.includes(nl.domain)
+              ).map((nl) => (
+                <button
+                  key={nl.domain}
+                  onClick={() => addSender(nl.domain)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-ink-800/30 border border-ink-700/30 rounded-full text-sm text-ink-300 hover:border-mint-500/30 hover:text-mint-400 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  {nl.name}
+                </button>
+              ))}
+            </div>
+            {settings.newsletterSenders.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
                 {settings.newsletterSenders.map((sender) => (
                   <span
                     key={sender}
@@ -265,28 +386,7 @@ export default function SettingsPage() {
                   </span>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Quick add popular newsletters */}
-          <div>
-            <h3 className="text-sm font-semibold text-ink-400 uppercase tracking-wider mb-3">
-              Popular Newsletters
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {COMMON_NEWSLETTERS.filter(
-                (nl) => !settings.newsletterSenders.includes(nl.domain)
-              ).map((nl) => (
-                <button
-                  key={nl.domain}
-                  onClick={() => addSender(nl.domain)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-ink-800/30 border border-ink-700/30 rounded-full text-sm text-ink-300 hover:border-mint-500/30 hover:text-mint-400 transition-colors"
-                >
-                  <Plus className="w-3 h-3" />
-                  {nl.name}
-                </button>
-              ))}
-            </div>
+            )}
           </div>
         </section>
 
@@ -297,7 +397,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-display font-bold">Auto-Detection</h2>
           </div>
           <p className="text-sm text-ink-400 mb-4">
-            Automatically detect newsletters based on common patterns (unsubscribe links, etc.)
+            When no feed filters are configured, include all items from your configured feeds.
           </p>
           
           <label className="flex items-center gap-3 cursor-pointer">
@@ -321,7 +421,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <span className="text-ink-200">
-              Enable auto-detection when no specific sources are configured
+              Include all feed items when no filters are configured
             </span>
           </label>
         </section>
@@ -333,7 +433,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-display font-bold">Sender Display Names</h2>
           </div>
           <p className="text-sm text-ink-400 mb-6">
-            Customize how newsletter senders are displayed. Useful for forwarded emails or when auto-detection doesn't work well.
+            Customize how feed sources are displayed in summaries and digest insights.
           </p>
 
           {/* Add new override */}
@@ -399,7 +499,7 @@ export default function SettingsPage() {
           {settings.senderOverrides && Object.keys(settings.senderOverrides).length === 0 && (
             <div className="p-4 bg-ink-800/20 rounded-lg border border-ink-700/20 text-center">
               <p className="text-sm text-ink-500">
-                No custom display names set. The app will auto-detect sender names from email content.
+                No custom display names set. The app will use feed-provided source names.
               </p>
             </div>
           )}
@@ -412,7 +512,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-display font-bold">Scheduled Digests</h2>
           </div>
           <p className="text-sm text-ink-400 mb-6">
-            Receive email digests on selected days.
+            Schedule when you want to run digest generation jobs.
           </p>
 
           <div className="space-y-4">
@@ -453,7 +553,7 @@ export default function SettingsPage() {
 
           <div className="mt-6 p-4 bg-ink-800/30 rounded-lg border border-ink-700/20">
             <p className="text-sm text-ink-400">
-              <span className="text-amber-500">Note:</span> Scheduled email digests require additional setup with a cron service like Vercel Cron or a similar scheduler. The current implementation focuses on on-demand digests through the dashboard.
+              <span className="text-amber-500">Note:</span> Runtime scheduling is not enabled by default. Configure a cron job that calls your digest endpoint on selected days.
             </p>
           </div>
         </section>
@@ -471,6 +571,7 @@ export default function SettingsPage() {
             onClick={() => {
               if (confirm('Are you sure you want to reset all settings?')) {
                 updateSettings({
+                  rssFeeds: [],
                   newsletterSenders: [],
                   senderOverrides: {},
                   autoDetect: true,

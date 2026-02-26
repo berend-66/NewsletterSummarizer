@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
-import { EmailMessage, extractTextFromHtml } from './microsoft-graph'
+import { extractTextFromHtml } from './microsoft-graph'
+import { CanonicalNewsletter } from './newsletter-model'
 
 // Lazy-load OpenAI client to avoid build-time initialization
 function getOpenAIClient(): OpenAI {
@@ -33,7 +34,7 @@ export interface CombinedDigest {
   actionItems: string[]
 }
 
-export async function summarizeNewsletter(email: EmailMessage): Promise<NewsletterSummary> {
+export async function summarizeNewsletter(email: CanonicalNewsletter): Promise<NewsletterSummary> {
   const textContent = email.body.contentType === 'html' 
     ? extractTextFromHtml(email.body.content)
     : email.body.content
@@ -171,7 +172,7 @@ Identify 2-4 major themes that appear across multiple newsletters. Extract the t
 }
 
 export async function summarizeNewsletters(
-  emails: EmailMessage[]
+  emails: CanonicalNewsletter[]
 ): Promise<{ summaries: NewsletterSummary[]; digest: CombinedDigest }> {
   // Process newsletters in parallel (with a limit to avoid rate limits)
   const batchSize = 5

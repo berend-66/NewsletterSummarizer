@@ -1,7 +1,9 @@
-import { EmailMessage, extractTextFromHtml } from './microsoft-graph'
+import { extractTextFromHtml } from './microsoft-graph'
+import { CanonicalNewsletter } from './newsletter-model'
 import { getCachedSummary, cacheSummary } from './cache-db'
 import { getNewsletterDisplayName } from './sender-parser'
 import { startProgress, updateProgress, clearProgress } from './progress-tracker'
+import { upsertSummaryEmbedding } from './semantic-search'
 
 export interface NewsletterSummary {
   id: string
@@ -65,7 +67,7 @@ async function callOllama(prompt: string, systemPrompt: string): Promise<string>
     return data.response
   } catch (error) {
     clearTimeout(timeout)
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('Ollama request timed out after 3 minutes')
     }
     throw error
@@ -73,12 +75,12 @@ async function callOllama(prompt: string, systemPrompt: string): Promise<string>
 }
 
 export async function summarizeNewsletter(
-  email: EmailMessage,
+  email: CanonicalNewsletter,
   userEmail: string,
   senderOverrides: Record<string, string> = {}
 ): Promise<NewsletterSummary> {
   // Check cache first
-  const cached = getCachedSummary(email.id, userEmail)
+  const cached = await getCachedSummary(email.id, userEmail)
   if (cached) {
     console.log(`✅ Cache hit for email: ${email.subject}`)
     return cached
@@ -135,7 +137,8 @@ Focus on extracting actionable insights and the most important information. Keep
     }
 
     // Cache the summary
-    cacheSummary(summary, userEmail)
+    await cacheSummary(summary, userEmail)
+    await upsertSummaryEmbedding(summary, userEmail)
     console.log(`💾 Cached summary for: ${email.subject}`)
 
     return summary
@@ -204,7 +207,7 @@ Identify 2-4 major themes that appear across multiple newsletters. Extract the t
 }
 
 export async function summarizeNewsletters(
-  emails: EmailMessage[],
+  emails: CanonicalNewsletter[],
   userEmail: string,
   senderOverrides: Record<string, string> = {}
 ): Promise<{ summaries: NewsletterSummary[]; digest: CombinedDigest; cacheStats: { hits: number; misses: number } }> {
@@ -231,7 +234,7 @@ export async function summarizeNewsletters(
         // Update progress
         updateProgress(userEmail, globalIndex, email.subject)
         
-        const cached = getCachedSummary(email.id, userEmail)
+        const cached = await getCachedSummary(email.id, userEmail)
         if (cached) {
           return { summary: cached, fromCache: true }
         } else {
@@ -244,6 +247,7 @@ export async function summarizeNewsletters(
     // Collect results
     for (const result of batchResults) {
       summaries.push(result.summary)
+      await upsertSummaryEmbedding(result.summary, userEmail)
       if (result.fromCache) {
         cacheHits++
       } else {

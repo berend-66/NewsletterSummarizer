@@ -17,7 +17,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: 'Newsletter Digest',
-  description: 'AI-powered newsletter summaries from your inbox',
+  description: 'AI-powered newsletter summaries from RSS feeds',
 }
 
 export default function RootLayout({

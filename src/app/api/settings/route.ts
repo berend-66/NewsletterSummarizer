@@ -1,23 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import {
+  getFeedHealthMetrics,
   getUserSettings,
   updateUserSettings,
   addNewsletterSender,
   removeNewsletterSender,
 } from '@/lib/user-settings'
+import { resolveRuntimeUserId } from '@/lib/runtime-user'
 
-export async function GET() {
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const settings = getUserSettings(session.user.email)
-    return NextResponse.json(settings)
+    const userId = resolveRuntimeUserId(request)
+    const [settings, feedHealth] = await Promise.all([
+      getUserSettings(userId),
+      getFeedHealthMetrics(userId),
+    ])
+    return NextResponse.json({
+      ...settings,
+      feedHealth,
+    })
   } catch (error) {
     console.error('Error fetching settings:', error)
     return NextResponse.json(
@@ -29,15 +32,14 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const userId = resolveRuntimeUserId(request)
     const body = await request.json()
-    const settings = updateUserSettings(session.user.email, body)
-    return NextResponse.json(settings)
+    const settings = await updateUserSettings(userId, body)
+    const feedHealth = await getFeedHealthMetrics(userId)
+    return NextResponse.json({
+      ...settings,
+      feedHealth,
+    })
   } catch (error) {
     console.error('Error updating settings:', error)
     return NextResponse.json(
@@ -49,21 +51,24 @@ export async function PUT(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const userId = resolveRuntimeUserId(request)
     const body = await request.json()
     const { action, sender } = body
 
     if (action === 'add' && sender) {
-      const settings = addNewsletterSender(session.user.email, sender)
-      return NextResponse.json(settings)
+      const settings = await addNewsletterSender(userId, sender)
+      const feedHealth = await getFeedHealthMetrics(userId)
+      return NextResponse.json({
+        ...settings,
+        feedHealth,
+      })
     } else if (action === 'remove' && sender) {
-      const settings = removeNewsletterSender(session.user.email, sender)
-      return NextResponse.json(settings)
+      const settings = await removeNewsletterSender(userId, sender)
+      const feedHealth = await getFeedHealthMetrics(userId)
+      return NextResponse.json({
+        ...settings,
+        feedHealth,
+      })
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
