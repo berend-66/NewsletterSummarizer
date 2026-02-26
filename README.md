@@ -46,7 +46,12 @@ OLLAMA_CONCURRENCY=2
 # Optional: lock down cron endpoint
 CRON_SECRET=your-random-secret
 
-# Required: Postgres connection (Railway managed Postgres)
+# Local default (optional): force SQLite
+DB_PROVIDER=sqlite
+SQLITE_DB_PATH=./newsletter.db
+
+# Production/Postgres mode (Railway managed Postgres)
+# If DATABASE_URL is set, provider defaults to postgres.
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 
 # Optional: semantic search embeddings
@@ -135,8 +140,9 @@ src/
 
 ### Persistent storage
 
-- The app now uses PostgreSQL via `DATABASE_URL`.
-- On Railway, provision a PostgreSQL service and expose `DATABASE_URL` to this app service.
+- Local development defaults to SQLite when `DATABASE_URL` is not set.
+- Production should use PostgreSQL via `DATABASE_URL` (Railway managed Postgres).
+- You can explicitly control provider with `DB_PROVIDER=sqlite|postgres`.
 - Current relational tables: `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`.
 
 ### Scheduler setup on Railway
@@ -204,6 +210,7 @@ Current implementation:
 - `item_embeddings` table in Postgres with `VECTOR(1536)`
 - embeddings generated from summary content at summarize time
 - `/api/search/semantic` queries nearest neighbors with cosine distance
+- On SQLite (local), semantic search falls back to exact same embeddings with JS cosine ranking (no ANN index).
 
 ## License
 

@@ -5,6 +5,19 @@ export interface CachedSummary extends NewsletterSummary {
   cachedAt?: string
 }
 
+function parseJsonArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value as string[]
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 /**
  * Get a cached summary by email ID and user email
  */
@@ -33,8 +46,8 @@ export async function getCachedSummary(
     senderEmail: row.sender_email,
     receivedAt: row.received_at,
     summary: row.summary,
-    keyPoints: row.key_points || [],
-    topics: row.topics || [],
+    keyPoints: parseJsonArray(row.key_points),
+    topics: parseJsonArray(row.topics),
     sentiment: row.sentiment as 'positive' | 'neutral' | 'negative',
     readTime: row.read_time,
     cachedAt: row.created_at?.toISOString?.() || row.created_at,
@@ -101,8 +114,8 @@ export async function getAllCachedSummaries(userEmail: string): Promise<CachedSu
     senderEmail: row.sender_email,
     receivedAt: row.received_at,
     summary: row.summary,
-    keyPoints: row.key_points || [],
-    topics: row.topics || [],
+    keyPoints: parseJsonArray(row.key_points),
+    topics: parseJsonArray(row.topics),
     sentiment: row.sentiment as 'positive' | 'neutral' | 'negative',
     readTime: row.read_time,
     cachedAt: row.created_at?.toISOString?.() || row.created_at,

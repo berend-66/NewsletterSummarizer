@@ -112,7 +112,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
   const settingsRow = settingsResult.rows[0] as
     | {
         user_id: string
-        auto_detect: boolean
+        auto_detect: boolean | number
         digest_days: unknown
         digest_time: string
         created_at: string | Date
@@ -142,7 +142,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
     rssFeeds: feeds,
     newsletterSenders: filters,
     senderOverrides,
-    autoDetect: settingsRow.auto_detect,
+    autoDetect: settingsRow.auto_detect === true || settingsRow.auto_detect === 1,
     digestDays: parseDigestDays(digestDaysRaw),
     digestTime: settingsRow.digest_time,
     createdAt:
