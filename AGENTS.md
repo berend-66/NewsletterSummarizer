@@ -22,3 +22,7 @@ Per `package.json` scripts — `npm run lint`, `npm run test`, `npm run build`, 
 - The `updateUserSettings` code path has a known SQLite boolean-binding issue (`SQLite3 can only bind numbers, strings, bigints, buffers, and null`) — the `autoDetect` boolean value is passed directly to `better-sqlite3` which rejects booleans. This causes 500 errors on the PUT `/api/settings` endpoint. The "Demo Data" button on the dashboard works as an alternative to verify UI functionality.
 - Ollama must be installed separately (`curl -fsSL https://ollama.com/install.sh | sh`) and requires `zstd` (`sudo apt-get install -y zstd`). Pull a model before use (e.g. a small 1b variant for CPU environments).
 - Tests use Node.js built-in test runner (`node --test --experimental-strip-types`); no external test framework needed.
+
+### Railway MCP
+
+The Railway MCP server is configured in `.cursor/mcp.json`. It requires `RAILWAY_API_TOKEN` to be set as a secret. The MCP provides tools for project/service management, deployments, environment variables, logs, and domain generation on Railway. The production deployment target is Railway with a PostgreSQL-backed stack (see `README.md` "Railway Deployment Notes"). The MCP server uses stdio transport and is started automatically by Cursor — no manual launch needed.
