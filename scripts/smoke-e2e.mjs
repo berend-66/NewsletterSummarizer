@@ -22,7 +22,12 @@ function assert(condition, message) {
 async function main() {
   const baseUrlCandidates = preferredBaseUrl
     ? [preferredBaseUrl]
-    : ['http://127.0.0.1:3000', 'http://127.0.0.1:3001']
+    : [
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'http://127.0.0.1:3002',
+        'http://127.0.0.1:3003',
+      ]
 
   let activeBaseUrl = null
   for (const candidate of baseUrlCandidates) {
