@@ -20,18 +20,21 @@ function getStoredTheme(): ThemeMode | null {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<ThemeMode>('light')
+  const [isThemeInitialized, setIsThemeInitialized] = useState(false)
 
   useEffect(() => {
     const storedTheme = getStoredTheme()
     if (storedTheme) {
       setTheme(storedTheme)
     }
+    setIsThemeInitialized(true)
   }, [])
 
   useEffect(() => {
+    if (!isThemeInitialized) return
     document.documentElement.setAttribute('data-theme', theme)
     window.localStorage.setItem('theme-mode', theme)
-  }, [theme])
+  }, [theme, isThemeInitialized])
 
   const value = useMemo<ThemeContextValue>(
     () => ({
