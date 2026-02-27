@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function SignInPage() {
   const [isRegisterMode, setIsRegisterMode] = useState(false)
@@ -82,13 +83,16 @@ export default function SignInPage() {
   return (
     <div className="min-h-screen mesh-bg flex items-center justify-center p-4">
       <div className="glass-card p-8 max-w-md w-full animate-fade-in">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-ink-400 hover:text-ink-200 mb-6 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
+        <div className="flex items-center justify-between mb-6">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-ink-400 hover:text-ink-200 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Link>
+          <ThemeToggle className="p-2" />
+        </div>
 
         <div className="text-center mb-8">
           <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-gradient-to-br from-coral-500 to-coral-600 flex items-center justify-center">

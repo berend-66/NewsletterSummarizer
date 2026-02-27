@@ -8,12 +8,14 @@ The project now ingests newsletters directly from RSS feeds instead of email for
 
 ## Features
 
+- Invite-only account auth (email/password + shared invite code)
 - RSS/Atom ingestion across multiple feeds
 - Canonical newsletter normalization for downstream summarization
 - Dedupe/idempotency via guid/link/content hash
 - AI summaries for each item
 - Cross-newsletter themes/highlights/action items
-- Persistent user-owned feed configuration (PostgreSQL)
+- Persistent user-owned feed configuration
+- Durable storage for raw newsletter items + ingestion run logs
 - Feed health metrics per user/feed
 - Scheduler endpoint for automated digest runs
 
@@ -41,6 +43,7 @@ RSS_FEEDS=https://example.com/feed.xml,https://another.com/rss
 
 # Invite-only account signup
 INVITE_CODE=shared-invite-code-for-your-team
+NEXTAUTH_SECRET=generate-a-long-random-string
 
 # Summarization provider selection
 # openai (default when OPENAI_API_KEY or OPENROUTER_API_KEY is present)
@@ -104,8 +107,8 @@ Open `http://localhost:3000`.
 ### User ownership model
 
 - Each user owns their own `rssFeeds`, filters, overrides, and feed health rows.
-- User identity is resolved via `x-user-id` header (defaults to `local-user` in local mode).
-- Signed-in users are keyed by account email; local development can still use `x-user-id`.
+- Signed-in users are keyed by account email.
+- Local development can still use `x-user-id` fallback headers when no session is present.
 
 ### API
 
@@ -165,7 +168,7 @@ src/
 - Local development defaults to SQLite when `DATABASE_URL` is not set.
 - Production should use PostgreSQL via `DATABASE_URL` (Railway managed Postgres).
 - You can explicitly control provider with `DB_PROVIDER=sqlite|postgres`.
-- Current relational tables: `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`.
+- Current relational tables: `app_users`, `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`, `newsletter_items`, `ingestion_runs`.
 
 ### Scheduler setup on Railway
 

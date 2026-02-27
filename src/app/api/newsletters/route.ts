@@ -7,6 +7,7 @@ import { getNewslettersFromRss } from '@/lib/rss-ingestion'
 import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
 import { cacheSummary } from '@/lib/cache-db'
 import { upsertSummaryEmbedding } from '@/lib/semantic-search'
+import { completeIngestionRun, persistNewsletterItems, startIngestionRun } from '@/lib/ingestion-log'
 
 function resolveSummarizerProvider(): 'openai' | 'ollama' {
   const explicit = process.env.SUMMARIZER_PROVIDER
@@ -26,6 +27,8 @@ function parseConfiguredFeeds(): string[] {
 }
 
 export async function GET(request: NextRequest) {
+  let runId: number | null = null
+
   try {
     const searchParams = request.nextUrl.searchParams
     const daysBack = parseInt(searchParams.get('days') || '7')
@@ -47,6 +50,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    runId = await startIngestionRun({
+      userId,
+      triggerType: 'manual',
+      daysBack,
+      feedCount: configuredFeeds.length,
+    })
+    const ingestionRunId = runId
+
     const rssResult = await getNewslettersFromRss(configuredFeeds, {
       daysBack,
       feedFilters: settings.newsletterSenders.length > 0 ? settings.newsletterSenders : undefined,
@@ -54,6 +65,7 @@ export async function GET(request: NextRequest) {
     const newsletters = rssResult.newsletters
 
     await Promise.all(rssResult.metrics.map((metric) => upsertFeedHealthMetric(userId, metric)))
+    await persistNewsletterItems(userId, newsletters, ingestionRunId)
     const feedHealth = await getFeedHealthMetrics(userId)
 
     if (summarize && newsletters.length > 0) {
@@ -61,6 +73,13 @@ export async function GET(request: NextRequest) {
       const provider = resolveSummarizerProvider()
 
       if (isAnalysisInProgress(userEmail)) {
+        await completeIngestionRun({
+          runId: ingestionRunId,
+          status: 'failed',
+          newsletterCount: newsletters.length,
+          summarizedCount: 0,
+          errorText: 'Analysis already in progress',
+        })
         return NextResponse.json(
           { error: 'Analysis already in progress. Please wait for it to complete.' },
           { status: 429 }
@@ -68,6 +87,13 @@ export async function GET(request: NextRequest) {
       }
       
       if (!lockAnalysis(userEmail)) {
+        await completeIngestionRun({
+          runId: ingestionRunId,
+          status: 'failed',
+          newsletterCount: newsletters.length,
+          summarizedCount: 0,
+          errorText: 'Failed to acquire analysis lock',
+        })
         return NextResponse.json(
           { error: 'Failed to start analysis. Please try again.' },
           { status: 500 }
@@ -83,6 +109,12 @@ export async function GET(request: NextRequest) {
               await upsertSummaryEmbedding(summary, userEmail)
             })
           )
+          await completeIngestionRun({
+            runId: ingestionRunId,
+            status: 'succeeded',
+            newsletterCount: newsletters.length,
+            summarizedCount: summaries.length,
+          })
           return NextResponse.json({
             summaries,
             digest,
@@ -97,6 +129,12 @@ export async function GET(request: NextRequest) {
           userEmail,
           settings.senderOverrides
         )
+        await completeIngestionRun({
+          runId: ingestionRunId,
+          status: 'succeeded',
+          newsletterCount: newsletters.length,
+          summarizedCount: summaries.length,
+        })
         return NextResponse.json({
           summaries,
           digest,
@@ -110,6 +148,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Return raw newsletter data without summaries
+    await completeIngestionRun({
+      runId: ingestionRunId,
+      status: 'succeeded',
+      newsletterCount: newsletters.length,
+      summarizedCount: 0,
+    })
     return NextResponse.json({
       newsletters: newsletters.map((n) => ({
         id: n.id,
@@ -127,6 +171,20 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof UnauthorizedRuntimeUserError) {
       return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
+    if (runId) {
+      try {
+        await completeIngestionRun({
+          runId,
+          status: 'failed',
+          newsletterCount: 0,
+          summarizedCount: 0,
+          errorText: error instanceof Error ? error.message : 'Unknown ingestion error',
+        })
+      } catch (completionError) {
+        console.error('Error completing failed ingestion run:', completionError)
+      }
     }
 
     console.error('Error fetching newsletters:', error)

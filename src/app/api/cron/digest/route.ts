@@ -11,6 +11,7 @@ import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analys
 import { DEFAULT_RUNTIME_USER } from '@/lib/runtime-user'
 import { cacheSummary } from '@/lib/cache-db'
 import { upsertSummaryEmbedding } from '@/lib/semantic-search'
+import { completeIngestionRun, persistNewsletterItems, startIngestionRun } from '@/lib/ingestion-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,10 @@ export async function POST(request: NextRequest) {
   }> = []
 
   for (const userId of targetUsers) {
+    let runId: number | null = null
+    let newsletterCount = 0
+    let summarized = 0
+
     const settings = await getUserSettings(userId)
     const configuredFeeds = settings.rssFeeds.length > 0 ? settings.rssFeeds : fallbackFeeds
 
@@ -74,7 +79,22 @@ export async function POST(request: NextRequest) {
       continue
     }
 
+    runId = await startIngestionRun({
+      userId,
+      triggerType: 'cron',
+      daysBack,
+      feedCount: configuredFeeds.length,
+    })
+    const ingestionRunId = runId
+
     if (isAnalysisInProgress(userId) || !lockAnalysis(userId)) {
+      await completeIngestionRun({
+        runId: ingestionRunId,
+        status: 'failed',
+        newsletterCount: 0,
+        summarizedCount: 0,
+        errorText: 'Analysis already in progress',
+      })
       results.push({
         userId,
         feedCount: configuredFeeds.length,
@@ -93,8 +113,9 @@ export async function POST(request: NextRequest) {
       })
 
       await Promise.all(rssResult.metrics.map((metric) => upsertFeedHealthMetric(userId, metric)))
+      newsletterCount = rssResult.newsletters.length
+      await persistNewsletterItems(userId, rssResult.newsletters, ingestionRunId)
 
-      let summarized = 0
       if (rssResult.newsletters.length > 0) {
         const provider = resolveSummarizerProvider()
         const summaryResult =
@@ -114,19 +135,40 @@ export async function POST(request: NextRequest) {
         summarized = summaryResult.summaries.length
       }
 
+      await completeIngestionRun({
+        runId: ingestionRunId,
+        status: 'succeeded',
+        newsletterCount,
+        summarizedCount: summarized,
+      })
+
       results.push({
         userId,
         feedCount: configuredFeeds.length,
-        newsletterCount: rssResult.newsletters.length,
+        newsletterCount,
         summarized,
         skipped: false,
       })
     } catch (error) {
+      if (runId) {
+        try {
+          await completeIngestionRun({
+            runId,
+            status: 'failed',
+            newsletterCount,
+            summarizedCount: summarized,
+            errorText: error instanceof Error ? error.message : 'Unknown cron error',
+          })
+        } catch (completionError) {
+          console.error('Error completing failed cron ingestion run:', completionError)
+        }
+      }
+
       results.push({
         userId,
         feedCount: configuredFeeds.length,
-        newsletterCount: 0,
-        summarized: 0,
+        newsletterCount,
+        summarized,
         skipped: false,
         error: error instanceof Error ? error.message : 'Unknown cron error',
       })

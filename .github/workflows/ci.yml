@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - cursor/**
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      INVITE_CODE: ci-invite-code
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke e2e
+        run: |
+          npm run dev -- --port 3000 > /tmp/next-dev.log 2>&1 &
+          DEV_PID=$!
+          trap "kill $DEV_PID" EXIT
+          sleep 12
+          npm run smoke:e2e
