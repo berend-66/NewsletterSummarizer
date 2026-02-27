@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { summarizeNewsletters } from '@/lib/ollama-summarizer'
+import { summarizeNewsletters as ollamaSummarize } from '@/lib/ollama-summarizer'
+import { summarizeNewsletters as openaiSummarize } from '@/lib/openai-summarizer'
 import {
   getUserSettings,
   getUsersWithFeeds,
@@ -8,8 +9,17 @@ import {
 import { getNewslettersFromRss } from '@/lib/rss-ingestion'
 import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analysis-lock'
 import { DEFAULT_RUNTIME_USER } from '@/lib/runtime-user'
+import { cacheSummary } from '@/lib/cache-db'
+import { upsertSummaryEmbedding } from '@/lib/semantic-search'
 
 export const dynamic = 'force-dynamic'
+
+function resolveSummarizerProvider(): 'openai' | 'ollama' {
+  const explicit = process.env.SUMMARIZER_PROVIDER
+  if (explicit === 'openai' || explicit === 'ollama') return explicit
+  if (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY) return 'openai'
+  return 'ollama'
+}
 
 function parseConfiguredFeeds(): string[] {
   const fromEnv = process.env.RSS_FEEDS || ''
@@ -86,11 +96,21 @@ export async function POST(request: NextRequest) {
 
       let summarized = 0
       if (rssResult.newsletters.length > 0) {
-        const summaryResult = await summarizeNewsletters(
-          rssResult.newsletters,
-          userId,
-          settings.senderOverrides
-        )
+        const provider = resolveSummarizerProvider()
+        const summaryResult =
+          provider === 'openai'
+            ? await openaiSummarize(rssResult.newsletters)
+            : await ollamaSummarize(rssResult.newsletters, userId, settings.senderOverrides)
+
+        if (provider === 'openai') {
+          await Promise.all(
+            summaryResult.summaries.map(async (summary) => {
+              await cacheSummary(summary, userId)
+              await upsertSummaryEmbedding(summary, userId)
+            })
+          )
+        }
+
         summarized = summaryResult.summaries.length
       }
 

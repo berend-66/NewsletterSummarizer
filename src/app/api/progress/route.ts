@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProgress, getProgressPercentage, getEstimatedTimeRemaining } from '@/lib/progress-tracker'
-import { resolveRuntimeUserId } from '@/lib/runtime-user'
+import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const userEmail = resolveRuntimeUserId(request)
+    const userEmail = await resolveRuntimeUserId(request)
     const progress = getProgress(userEmail)
     
     if (!progress) {
@@ -27,6 +27,10 @@ export async function GET(request: NextRequest) {
       estimatedTimeRemainingMs: estimatedTimeMs,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Error fetching progress:', error)
     return NextResponse.json(
       { error: 'Failed to fetch progress' },

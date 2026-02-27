@@ -4,13 +4,14 @@ import { summarizeNewsletters as openaiSummarize } from '@/lib/openai-summarizer
 import { getFeedHealthMetrics, getUserSettings, upsertFeedHealthMetric } from '@/lib/user-settings'
 import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analysis-lock'
 import { getNewslettersFromRss } from '@/lib/rss-ingestion'
-import { resolveRuntimeUserId } from '@/lib/runtime-user'
-import type { CanonicalNewsletter } from '@/lib/newsletter-model'
+import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
+import { cacheSummary } from '@/lib/cache-db'
+import { upsertSummaryEmbedding } from '@/lib/semantic-search'
 
 function resolveSummarizerProvider(): 'openai' | 'ollama' {
   const explicit = process.env.SUMMARIZER_PROVIDER
   if (explicit === 'openai' || explicit === 'ollama') return explicit
-  if (process.env.OPENAI_API_KEY) return 'openai'
+  if (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY) return 'openai'
   return 'ollama'
 }
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const daysBack = parseInt(searchParams.get('days') || '7')
     const summarize = searchParams.get('summarize') !== 'false'
-    const userId = resolveRuntimeUserId(request)
+    const userId = await resolveRuntimeUserId(request)
 
     // Get user settings
     const settings = await getUserSettings(userId)
@@ -76,6 +77,12 @@ export async function GET(request: NextRequest) {
       try {
         if (provider === 'openai') {
           const { summaries, digest } = await openaiSummarize(newsletters)
+          await Promise.all(
+            summaries.map(async (summary) => {
+              await cacheSummary(summary, userEmail)
+              await upsertSummaryEmbedding(summary, userEmail)
+            })
+          )
           return NextResponse.json({
             summaries,
             digest,
@@ -118,6 +125,10 @@ export async function GET(request: NextRequest) {
       feedHealth,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Error fetching newsletters:', error)
     return NextResponse.json(
       { error: 'Failed to fetch newsletters' },

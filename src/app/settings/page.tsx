@@ -66,6 +66,9 @@ export default function SettingsPage() {
         if (res.ok) {
           const data = await res.json()
           setSettings(data)
+        } else if (res.status === 401) {
+          window.location.href = '/auth/signin'
+          return
         } else {
           const errorData = await res.json().catch(() => ({}))
           setLoadError(errorData.error || 'Failed to load settings')

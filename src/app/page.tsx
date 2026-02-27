@@ -107,6 +107,8 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json()
         setDigestData(data)
+      } else if (res.status === 401) {
+        window.location.href = '/auth/signin'
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {

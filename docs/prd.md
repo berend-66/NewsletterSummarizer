@@ -53,7 +53,7 @@ Create a repo/process setup that enables coding agents to ship safely and quickl
 ### FR1 — Authentication and access
 - Remove Azure AD dependence from normal product flows.
 - Provide sign-up/login via email + password.
-- Restrict beta to invite-only users.
+- Restrict beta to invite-only users with a shared invite code.
 - Keep local development mode practical for agents.
 
 ### FR2 — Durable data model
@@ -61,7 +61,7 @@ Create a repo/process setup that enables coding agents to ship safely and quickl
   - user linkage
   - sender/source
   - subject/title
-  - content/body (large cap with abuse/safety guardrail)
+  - content/body (2MB cap with abuse/safety guardrail)
   - timestamps and ingestion metadata
 - Persist summaries and digest outputs with provider/model metadata.
 - Retention target: multi-year (effectively "forever" for product intent).
@@ -73,6 +73,7 @@ Create a repo/process setup that enables coding agents to ship safely and quickl
 
 ### FR4 — Analytics foundation
 - Track analytics-friendly fields for topic, sector, geography, industry, and other useful signals.
+- Taxonomy is generated dynamically from observed data (not fixed/predefined).
 - Support VC-oriented views while remaining useful for general professionals.
 - Define yearly wrapped output as milestone capability.
 
@@ -136,7 +137,6 @@ Create a repo/process setup that enables coding agents to ship safely and quickl
 ## 8) Open items to confirm in implementation tickets
 
 1. Final auth library/service choice for invite-only email/password.
-2. Exact invite lifecycle (single-use code, expiration, admin UI/API).
-3. Maximum raw content size cap and sanitization policy.
-4. Analytics taxonomy source for topic/sector/geo/industry labeling.
+2. Optional future invite lifecycle upgrades (single-use code, expiration, admin UI/API).
+3. Future taxonomy quality controls for dynamically generated topic/sector/geo/industry labels.
 

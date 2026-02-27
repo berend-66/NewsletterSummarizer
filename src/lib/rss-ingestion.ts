@@ -27,6 +27,8 @@ interface FeedItemContext {
   feedTitle: string
 }
 
+export const MAX_NEWSLETTER_CONTENT_BYTES = 2 * 1024 * 1024
+
 function stripHtml(html: string): string {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -67,6 +69,24 @@ function buildDedupeKey(guid: string, link: string, subject: string, content: st
 
 function decodeCdata(value: string): string {
   return value.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '')
+}
+
+function truncateToUtf8Bytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
+
+  let low = 0
+  let high = value.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    const candidate = value.slice(0, mid)
+    if (Buffer.byteLength(candidate, 'utf8') <= maxBytes) {
+      low = mid
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return value.slice(0, low)
 }
 
 function extractTagValue(input: string, tagNames: string[]): string {
@@ -116,6 +136,7 @@ function itemToCanonicalNewsletter(itemXml: string, context: FeedItemContext): C
     'summary',
     'subtitle',
   ])
+  const cappedDescription = truncateToUtf8Bytes(rawDescription, MAX_NEWSLETTER_CONTENT_BYTES)
 
   if (!title && !rawDescription) {
     return null
@@ -124,8 +145,8 @@ function itemToCanonicalNewsletter(itemXml: string, context: FeedItemContext): C
   const author =
     extractTagValue(itemXml, ['author', 'dc:creator']) || context.feedTitle || 'RSS Feed'
 
-  const contentType: 'text' | 'html' = rawDescription.includes('<') ? 'html' : 'text'
-  const previewText = contentType === 'html' ? stripHtml(rawDescription) : rawDescription
+  const contentType: 'text' | 'html' = cappedDescription.includes('<') ? 'html' : 'text'
+  const previewText = contentType === 'html' ? stripHtml(cappedDescription) : cappedDescription
   const bodyPreview = previewText.slice(0, 240)
 
   const dedupeKey = buildDedupeKey(guid, link, title, previewText)
@@ -142,7 +163,7 @@ function itemToCanonicalNewsletter(itemXml: string, context: FeedItemContext): C
     receivedDateTime: published,
     bodyPreview,
     body: {
-      content: rawDescription || previewText,
+      content: cappedDescription || previewText,
       contentType,
     },
     isRead: false,

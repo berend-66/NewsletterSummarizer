@@ -13,7 +13,7 @@ Single Next.js 14 application — AI-powered newsletter digest using RSS feeds. 
 
 ### Key commands
 
-Per `package.json` scripts — `npm run lint`, `npm run test`, `npm run build`, `npm run dev`.
+Per `package.json` scripts — `npm run lint`, `npm run test`, `npm run build`, `npm run smoke:e2e`, `npm run dev`.
 
 ### Gotchas
 
@@ -27,6 +27,7 @@ Per `package.json` scripts — `npm run lint`, `npm run test`, `npm run build`, 
 
 - RSS-first is mandatory for current scope; do not re-introduce Microsoft Graph/mailbox-permissions-based ingestion.
 - Remove Microsoft-centric Azure AD auth UX from active product flow; target invite-only email account auth for beta.
+- Invite-only beta uses a shared invite code (`INVITE_CODE`) for account creation.
 - Persist newsletters and summaries per user for long-horizon analytics; retention is effectively multi-year.
 - Store newsletter content with a high size cap (guardrails for abusive/unreasonably large payloads only).
 - Default model direction is `gpt-5-mini`, with OpenRouter compatibility required.

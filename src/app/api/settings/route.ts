@@ -6,13 +6,13 @@ import {
   addNewsletterSender,
   removeNewsletterSender,
 } from '@/lib/user-settings'
-import { resolveRuntimeUserId } from '@/lib/runtime-user'
+import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = resolveRuntimeUserId(request)
+    const userId = await resolveRuntimeUserId(request)
     const [settings, feedHealth] = await Promise.all([
       getUserSettings(userId),
       getFeedHealthMetrics(userId),
@@ -22,6 +22,10 @@ export async function GET(request: NextRequest) {
       feedHealth,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Error fetching settings:', error)
     return NextResponse.json(
       { error: 'Failed to fetch settings' },
@@ -41,7 +45,7 @@ function isValidUrl(s: string): boolean {
 
 export async function PUT(request: NextRequest) {
   try {
-    const userId = resolveRuntimeUserId(request)
+    const userId = await resolveRuntimeUserId(request)
     const body = await request.json()
 
     if (body.rssFeeds !== undefined) {
@@ -68,6 +72,10 @@ export async function PUT(request: NextRequest) {
       feedHealth,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Error updating settings:', error)
     return NextResponse.json(
       { error: 'Failed to update settings' },
@@ -78,7 +86,7 @@ export async function PUT(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = resolveRuntimeUserId(request)
+    const userId = await resolveRuntimeUserId(request)
     const body = await request.json()
     const { action, sender } = body
 
@@ -100,6 +108,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Error modifying sender:', error)
     return NextResponse.json(
       { error: 'Failed to modify sender' },

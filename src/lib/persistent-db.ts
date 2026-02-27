@@ -90,6 +90,14 @@ async function initPostgres(): Promise<void> {
   }
 
   await activePool.query(`
+    CREATE TABLE IF NOT EXISTS app_users (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       auto_detect BOOLEAN NOT NULL DEFAULT TRUE,
@@ -163,6 +171,7 @@ async function initPostgres(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_summaries_user_email ON summaries(user_email);
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
+    CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
   `)
 
   const embeddingType = hasVector ? 'VECTOR(1536)' : 'TEXT'
@@ -202,6 +211,14 @@ async function initPostgres(): Promise<void> {
 function initSqlite(): void {
   const db = getSqliteDb()
   db.exec(`
+    CREATE TABLE IF NOT EXISTS app_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       auto_detect INTEGER NOT NULL DEFAULT 1,
@@ -288,6 +305,7 @@ function initSqlite(): void {
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
     CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
+    CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
   `)
 }
 
