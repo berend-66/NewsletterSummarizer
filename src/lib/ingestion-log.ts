@@ -19,6 +19,13 @@ interface CompleteIngestionRunInput {
   errorText?: string
 }
 
+export interface LatestSuccessfulIngestionRun {
+  id: number
+  triggerType: IngestionTrigger
+  startedAt: string
+  completedAt: string
+}
+
 export async function startIngestionRun(input: StartIngestionRunInput): Promise<number> {
   await ensureDatabaseInitialized()
   const nowIso = new Date().toISOString()
@@ -77,6 +84,58 @@ export async function completeIngestionRun(input: CompleteIngestionRunInput): Pr
       input.runId,
     ]
   )
+}
+
+export async function getLatestSuccessfulIngestionRun(
+  userId: string,
+  triggerType?: IngestionTrigger
+): Promise<LatestSuccessfulIngestionRun | null> {
+  await ensureDatabaseInitialized()
+
+  const query = triggerType
+    ? `
+      SELECT id, trigger_type, started_at, completed_at
+      FROM ingestion_runs
+      WHERE user_id = $1
+        AND status = 'succeeded'
+        AND completed_at IS NOT NULL
+        AND trigger_type = $2
+      ORDER BY completed_at DESC, id DESC
+      LIMIT 1
+    `
+    : `
+      SELECT id, trigger_type, started_at, completed_at
+      FROM ingestion_runs
+      WHERE user_id = $1
+        AND status = 'succeeded'
+        AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, id DESC
+      LIMIT 1
+    `
+
+  const values = triggerType ? [userId, triggerType] : [userId]
+  const result = await db.query(query, values)
+  const row = result.rows[0] as
+    | {
+        id: number
+        trigger_type: IngestionTrigger
+        started_at: string | Date
+        completed_at: string | Date
+      }
+    | undefined
+
+  if (!row) return null
+
+  const startedAt = row.started_at instanceof Date ? row.started_at.toISOString() : row.started_at
+  const completedAt =
+    row.completed_at instanceof Date ? row.completed_at.toISOString() : row.completed_at
+
+  return {
+    id: row.id,
+    triggerType: row.trigger_type,
+    startedAt,
+    completedAt,
+  }
 }
 
 export async function persistNewsletterItems(

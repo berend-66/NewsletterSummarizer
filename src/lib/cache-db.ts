@@ -1,4 +1,4 @@
-import { NewsletterSummary } from './ollama-summarizer'
+import type { NewsletterSummary } from './ollama-summarizer'
 import db, { ensureDatabaseInitialized } from './persistent-db'
 
 export interface CachedSummary extends NewsletterSummary {
@@ -16,6 +16,22 @@ function parseJsonArray(value: unknown): string[] {
     }
   }
   return []
+}
+
+function rowToCachedSummary(row: any): CachedSummary {
+  return {
+    id: row.email_id,
+    subject: row.newsletter_subject,
+    sender: row.sender_name,
+    senderEmail: row.sender_email,
+    receivedAt: row.received_at,
+    summary: row.summary,
+    keyPoints: parseJsonArray(row.key_points),
+    topics: parseJsonArray(row.topics),
+    sentiment: row.sentiment as 'positive' | 'neutral' | 'negative',
+    readTime: row.read_time,
+    cachedAt: row.created_at?.toISOString?.() || row.created_at,
+  }
 }
 
 /**
@@ -39,19 +55,7 @@ export async function getCachedSummary(
   const row = result.rows[0] as any
   if (!row) return null
   
-  return {
-    id: row.email_id,
-    subject: row.newsletter_subject,
-    sender: row.sender_name,
-    senderEmail: row.sender_email,
-    receivedAt: row.received_at,
-    summary: row.summary,
-    keyPoints: parseJsonArray(row.key_points),
-    topics: parseJsonArray(row.topics),
-    sentiment: row.sentiment as 'positive' | 'neutral' | 'negative',
-    readTime: row.read_time,
-    cachedAt: row.created_at?.toISOString?.() || row.created_at,
-  }
+  return rowToCachedSummary(row)
 }
 
 /**
@@ -107,19 +111,30 @@ export async function getAllCachedSummaries(userEmail: string): Promise<CachedSu
   )
   const rows = result.rows as any[]
 
-  return rows.map(row => ({
-    id: row.email_id,
-    subject: row.newsletter_subject,
-    sender: row.sender_name,
-    senderEmail: row.sender_email,
-    receivedAt: row.received_at,
-    summary: row.summary,
-    keyPoints: parseJsonArray(row.key_points),
-    topics: parseJsonArray(row.topics),
-    sentiment: row.sentiment as 'positive' | 'neutral' | 'negative',
-    readTime: row.read_time,
-    cachedAt: row.created_at?.toISOString?.() || row.created_at,
-  }))
+  return rows.map((row) => rowToCachedSummary(row))
+}
+
+/**
+ * Get cached summaries for a rolling time window.
+ */
+export async function getCachedSummariesForWindow(
+  userEmail: string,
+  daysBack: number
+): Promise<CachedSummary[]> {
+  await ensureDatabaseInitialized()
+
+  const result = await db.query(
+    `
+      SELECT * FROM summaries
+      WHERE user_email = $1
+        AND received_at >= NOW() - ($2 * INTERVAL '1 day')
+      ORDER BY received_at DESC
+    `,
+    [userEmail, daysBack]
+  )
+
+  const rows = result.rows as any[]
+  return rows.map((row) => rowToCachedSummary(row))
 }
 
 /**

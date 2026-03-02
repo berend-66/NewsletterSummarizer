@@ -53,6 +53,7 @@ interface DigestData {
 export default function Home() {
   const [digestData, setDigestData] = useState<DigestData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [daysBack, setDaysBack] = useState(7)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [demoMode, setDemoMode] = useState(false)
@@ -65,7 +66,7 @@ export default function Home() {
   } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const fetchDigest = async () => {
+  const fetchDigest = async (refresh: boolean = false) => {
     // Cancel any existing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -76,35 +77,41 @@ export default function Home() {
     const signal = abortControllerRef.current.signal
     
     setLoading(true)
+    setRefreshing(refresh)
     setProgress(null)
     
-    // Start polling for progress
-    const progressInterval = setInterval(async () => {
-      if (signal.aborted) return
-      
-      try {
-        const res = await fetch('/api/progress', { signal })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.active) {
-            setProgress({
-              percentage: data.percentage,
-              current: data.completed,
-              total: data.total,
-              currentNewsletter: data.currentNewsletter,
-              estimatedTimeMs: data.estimatedTimeRemainingMs,
-            })
+    // Poll progress only when we trigger a fresh analysis run.
+    const progressInterval = refresh
+      ? setInterval(async () => {
+          if (signal.aborted) return
+          
+          try {
+            const res = await fetch('/api/progress', { signal })
+            if (res.ok) {
+              const data = await res.json()
+              if (data.active) {
+                setProgress({
+                  percentage: data.percentage,
+                  current: data.completed,
+                  total: data.total,
+                  currentNewsletter: data.currentNewsletter,
+                  estimatedTimeMs: data.estimatedTimeRemainingMs,
+                })
+              }
+            }
+          } catch (error) {
+            if (!(error instanceof Error && error.name === 'AbortError')) {
+              console.error('Error fetching progress:', error)
+            }
           }
-        }
-      } catch (error) {
-        if (!(error instanceof Error && error.name === 'AbortError')) {
-          console.error('Error fetching progress:', error)
-        }
-      }
-    }, 1000) // Poll every second
+        }, 1000)
+      : null
     
     try {
-      const res = await fetch(`/api/newsletters?days=${daysBack}&summarize=true`, { signal })
+      const res = await fetch(
+        `/api/newsletters?days=${daysBack}&summarize=true&refresh=${refresh ? 'true' : 'false'}`,
+        { signal }
+      )
       if (res.ok) {
         const data = await res.json()
         setDigestData(data)
@@ -118,8 +125,11 @@ export default function Home() {
         console.error('Error fetching digest:', error)
       }
     } finally {
-      clearInterval(progressInterval)
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
       setLoading(false)
+      setRefreshing(false)
       setProgress(null)
       abortControllerRef.current = null
     }
@@ -155,7 +165,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!demoMode) {
-      fetchDigest()
+      fetchDigest(false)
     }
     // fetchDigest is intentionally stable enough for mount/demo toggles in this screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,7 +239,7 @@ export default function Home() {
             {!demoMode && (
               <>
                 <button
-                  onClick={fetchDigest}
+                  onClick={() => fetchDigest(true)}
                   disabled={loading}
                   className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-mint-500 to-mint-600 hover:from-mint-600 hover:to-mint-500 text-ink-950 font-medium rounded-lg transition-all duration-200 disabled:opacity-50"
                 >
@@ -238,7 +248,7 @@ export default function Home() {
                   ) : (
                     <RefreshCw className="w-4 h-4" />
                   )}
-                  {loading ? 'Analyzing...' : 'Refresh'}
+                  {loading && refreshing ? 'Analyzing...' : loading ? 'Loading...' : 'Refresh'}
                 </button>
                 <button
                   onClick={loadDemoData}
@@ -307,10 +317,18 @@ export default function Home() {
                 <div>
                   <Loader2 className="w-12 h-12 text-coral-500 animate-spin mx-auto mb-4" />
                   <h3 className="text-xl font-semibold mb-2">
-                    {demoMode ? 'Loading demo data...' : 'Analyzing your newsletters...'}
+                    {demoMode
+                      ? 'Loading demo data...'
+                      : refreshing
+                        ? 'Analyzing your newsletters...'
+                        : 'Loading latest digest...'}
                   </h3>
                   <p className="text-ink-400">
-                    {demoMode ? 'Preparing sample newsletters to show you.' : 'This may take a moment as we summarize each one.'}
+                    {demoMode
+                      ? 'Preparing sample newsletters to show you.'
+                      : refreshing
+                        ? 'This may take a moment as we summarize each one.'
+                        : 'Showing your most recent stored summaries and insights.'}
                   </p>
                 </div>
               )}
