@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { summarizeNewsletters as ollamaSummarize } from '@/lib/ollama-summarizer'
-import { summarizeNewsletters as openaiSummarize } from '@/lib/openai-summarizer'
 import {
   getUserSettings,
   getUsersWithFeeds,
@@ -9,18 +7,15 @@ import {
 import { getNewslettersFromRss } from '@/lib/rss-ingestion'
 import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analysis-lock'
 import { DEFAULT_RUNTIME_USER } from '@/lib/runtime-user'
-import { cacheSummary } from '@/lib/cache-db'
-import { upsertSummaryEmbedding } from '@/lib/semantic-search'
-import { completeIngestionRun, persistNewsletterItems, startIngestionRun } from '@/lib/ingestion-log'
+import {
+  completeIngestionRun,
+  getLatestSuccessfulIngestionRun,
+  persistNewsletterItems,
+  startIngestionRun,
+} from '@/lib/ingestion-log'
+import { analyzeNewslettersIncremental, resolvePreferredProvider } from '@/lib/incremental-analysis'
 
 export const dynamic = 'force-dynamic'
-
-function resolveSummarizerProvider(): 'openai' | 'ollama' {
-  const explicit = process.env.SUMMARIZER_PROVIDER
-  if (explicit === 'openai' || explicit === 'ollama') return explicit
-  if (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY) return 'openai'
-  return 'ollama'
-}
 
 function parseConfiguredFeeds(): string[] {
   const fromEnv = process.env.RSS_FEEDS || ''
@@ -46,9 +41,13 @@ export async function POST(request: NextRequest) {
   }
 
   const daysBack = parseInt(request.nextUrl.searchParams.get('days') || '7')
+  const force = request.nextUrl.searchParams.get('force') === 'true'
+  const minIntervalHours = Math.max(1, parseInt(process.env.CRON_MIN_INTERVAL_HOURS || '12'))
+  const minIntervalMs = minIntervalHours * 60 * 60 * 1000
   const fallbackFeeds = parseConfiguredFeeds()
   const users = await getUsersWithFeeds()
   const targetUsers = users.length > 0 ? users : [DEFAULT_RUNTIME_USER]
+  const preferredProvider = resolvePreferredProvider()
 
   const results: Array<{
     userId: string
@@ -77,6 +76,26 @@ export async function POST(request: NextRequest) {
         error: 'No RSS feeds configured',
       })
       continue
+    }
+
+    if (!force) {
+      const latestRun = await getLatestSuccessfulIngestionRun(userId, 'cron')
+      if (latestRun) {
+        const elapsedMs = Date.now() - new Date(latestRun.completedAt).valueOf()
+        if (elapsedMs < minIntervalMs) {
+          const remainingMs = minIntervalMs - elapsedMs
+          const remainingMinutes = Math.ceil(remainingMs / (60 * 1000))
+          results.push({
+            userId,
+            feedCount: configuredFeeds.length,
+            newsletterCount: 0,
+            summarized: 0,
+            skipped: true,
+            error: `Skipped: minimum interval not reached (${remainingMinutes}m remaining)`,
+          })
+          continue
+        }
+      }
     }
 
     runId = await startIngestionRun({
@@ -117,22 +136,15 @@ export async function POST(request: NextRequest) {
       await persistNewsletterItems(userId, rssResult.newsletters, ingestionRunId)
 
       if (rssResult.newsletters.length > 0) {
-        const provider = resolveSummarizerProvider()
-        const summaryResult =
-          provider === 'openai'
-            ? await openaiSummarize(rssResult.newsletters)
-            : await ollamaSummarize(rssResult.newsletters, userId, settings.senderOverrides)
-
-        if (provider === 'openai') {
-          await Promise.all(
-            summaryResult.summaries.map(async (summary) => {
-              await cacheSummary(summary, userId)
-              await upsertSummaryEmbedding(summary, userId)
-            })
-          )
-        }
-
-        summarized = summaryResult.summaries.length
+        const analysisResult = await analyzeNewslettersIncremental({
+          newsletters: rssResult.newsletters,
+          userId,
+          daysBack,
+          senderOverrides: settings.senderOverrides,
+          sourceRunId: ingestionRunId,
+          preferredProvider,
+        })
+        summarized = analysisResult.newlySummarized
       }
 
       await completeIngestionRun({

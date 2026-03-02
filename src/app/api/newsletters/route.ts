@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { summarizeNewsletters as ollamaSummarize } from '@/lib/ollama-summarizer'
-import { summarizeNewsletters as openaiSummarize } from '@/lib/openai-summarizer'
 import { getFeedHealthMetrics, getUserSettings, upsertFeedHealthMetric } from '@/lib/user-settings'
 import { isAnalysisInProgress, lockAnalysis, unlockAnalysis } from '@/lib/analysis-lock'
 import { getNewslettersFromRss } from '@/lib/rss-ingestion'
 import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
-import { cacheSummary } from '@/lib/cache-db'
-import { upsertSummaryEmbedding } from '@/lib/semantic-search'
 import { completeIngestionRun, persistNewsletterItems, startIngestionRun } from '@/lib/ingestion-log'
-
-function resolveSummarizerProvider(): 'openai' | 'ollama' {
-  const explicit = process.env.SUMMARIZER_PROVIDER
-  if (explicit === 'openai' || explicit === 'ollama') return explicit
-  if (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY) return 'openai'
-  return 'ollama'
-}
+import {
+  analyzeNewslettersIncremental,
+  createEmptyDigest,
+  resolvePreferredProvider,
+} from '@/lib/incremental-analysis'
+import { getCachedSummariesForWindow } from '@/lib/cache-db'
+import { getLatestDigestSnapshot } from '@/lib/digest-snapshots'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,10 +29,29 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const daysBack = parseInt(searchParams.get('days') || '7')
     const summarize = searchParams.get('summarize') !== 'false'
+    const refresh = searchParams.get('refresh') === 'true'
     const userId = await resolveRuntimeUserId(request)
 
-    // Get user settings
     const settings = await getUserSettings(userId)
+    const feedHealth = await getFeedHealthMetrics(userId)
+
+    // On regular page load, serve persisted data only.
+    if (!refresh) {
+      const [summaries, latestSnapshot] = await Promise.all([
+        getCachedSummariesForWindow(userId, daysBack),
+        getLatestDigestSnapshot(userId, daysBack),
+      ])
+
+      return NextResponse.json({
+        summaries,
+        digest: latestSnapshot?.digest || createEmptyDigest(summaries.length),
+        rawCount: summaries.length,
+        cacheStats: { hits: summaries.length, misses: 0 },
+        feedHealth,
+        refreshed: false,
+      })
+    }
+
     const configuredFeeds =
       settings.rssFeeds.length > 0 ? settings.rssFeeds : parseConfiguredFeeds()
 
@@ -66,11 +81,11 @@ export async function GET(request: NextRequest) {
 
     await Promise.all(rssResult.metrics.map((metric) => upsertFeedHealthMetric(userId, metric)))
     await persistNewsletterItems(userId, newsletters, ingestionRunId)
-    const feedHealth = await getFeedHealthMetrics(userId)
+    const latestFeedHealth = await getFeedHealthMetrics(userId)
 
     if (summarize && newsletters.length > 0) {
       const userEmail = userId
-      const provider = resolveSummarizerProvider()
+      const preferredProvider = resolvePreferredProvider()
 
       if (isAnalysisInProgress(userEmail)) {
         await completeIngestionRun({
@@ -101,59 +116,57 @@ export async function GET(request: NextRequest) {
       }
       
       try {
-        if (provider === 'openai') {
-          const { summaries, digest } = await openaiSummarize(newsletters)
-          await Promise.all(
-            summaries.map(async (summary) => {
-              await cacheSummary(summary, userEmail)
-              await upsertSummaryEmbedding(summary, userEmail)
-            })
-          )
-          await completeIngestionRun({
-            runId: ingestionRunId,
-            status: 'succeeded',
-            newsletterCount: newsletters.length,
-            summarizedCount: summaries.length,
-          })
-          return NextResponse.json({
-            summaries,
-            digest,
-            rawCount: newsletters.length,
-            cacheStats: { hits: 0, misses: summaries.length },
-            feedHealth,
-          })
-        }
+        const analysisResult = await analyzeNewslettersIncremental({
+          newsletters,
+          userId: userEmail,
+          daysBack,
+          senderOverrides: settings.senderOverrides,
+          sourceRunId: ingestionRunId,
+          preferredProvider,
+        })
 
-        const { summaries, digest, cacheStats } = await ollamaSummarize(
-          newsletters, 
-          userEmail,
-          settings.senderOverrides
-        )
         await completeIngestionRun({
           runId: ingestionRunId,
           status: 'succeeded',
           newsletterCount: newsletters.length,
-          summarizedCount: summaries.length,
+          summarizedCount: analysisResult.newlySummarized,
         })
+
         return NextResponse.json({
-          summaries,
-          digest,
+          summaries: analysisResult.summaries,
+          digest: analysisResult.digest,
           rawCount: newsletters.length,
-          cacheStats,
-          feedHealth,
+          cacheStats: analysisResult.cacheStats,
+          analyzedNewCount: analysisResult.newlySummarized,
+          providerUsed: analysisResult.providerUsed,
+          feedHealth: latestFeedHealth,
+          refreshed: true,
         })
       } finally {
         unlockAnalysis(userEmail)
       }
     }
 
-    // Return raw newsletter data without summaries
+    const latestSnapshot = await getLatestDigestSnapshot(userId, daysBack)
+
     await completeIngestionRun({
       runId: ingestionRunId,
       status: 'succeeded',
       newsletterCount: newsletters.length,
       summarizedCount: 0,
     })
+
+    if (summarize) {
+      return NextResponse.json({
+        summaries: [],
+        digest: latestSnapshot?.digest || createEmptyDigest(0),
+        rawCount: newsletters.length,
+        cacheStats: { hits: 0, misses: 0 },
+        feedHealth: latestFeedHealth,
+        refreshed: true,
+      })
+    }
+
     return NextResponse.json({
       newsletters: newsletters.map((n) => ({
         id: n.id,
@@ -166,7 +179,8 @@ export async function GET(request: NextRequest) {
         isRead: n.isRead,
       })),
       rawCount: newsletters.length,
-      feedHealth,
+      feedHealth: latestFeedHealth,
+      refreshed: true,
     })
   } catch (error) {
     if (error instanceof UnauthorizedRuntimeUserError) {

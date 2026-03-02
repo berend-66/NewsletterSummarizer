@@ -98,7 +98,6 @@ Focus on extracting actionable insights and the most important information. Keep
           content: prompt,
         },
       ],
-      temperature: 0.3,
       response_format: { type: 'json_object' },
     })
 
@@ -175,7 +174,6 @@ Identify 2-4 major themes that appear across multiple newsletters. Extract the t
           content: prompt,
         },
       ],
-      temperature: 0.4,
       response_format: { type: 'json_object' },
     })
 

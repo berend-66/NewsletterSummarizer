@@ -14,6 +14,7 @@ The project now ingests newsletters directly from RSS feeds instead of email for
 - Dedupe/idempotency via guid/link/content hash
 - AI summaries for each item
 - Cross-newsletter themes/highlights/action items
+- Incremental summarization (only unsummarized newsletters are newly analyzed)
 - Persistent user-owned feed configuration
 - Durable storage for raw newsletter items + ingestion run logs
 - Feed health metrics per user/feed
@@ -112,14 +113,17 @@ Open `http://localhost:3000`.
 
 ### API
 
-- `GET /api/newsletters?days=7&summarize=true`
-  - Fetches RSS items, normalizes, dedupes, summarizes, and updates feed health
+- `GET /api/newsletters?days=7&summarize=true&refresh=false`
+  - Default (`refresh=false`): returns persisted summaries + latest stored digest snapshot (no new RSS/LLM run)
+  - Refresh run (`refresh=true`): fetches RSS items, persists items, summarizes only unsummarized newsletters, and refreshes digest snapshot
 - `GET /api/settings`, `PUT /api/settings`, `POST /api/settings`
   - Manage feed/filter configuration and return feed health
 - `GET /api/progress`
   - Poll summarization progress
 - `POST /api/cron/digest?days=7`
   - Runs scheduled ingestion/summarization for all users with configured feeds
+  - Summarizes only unsummarized newsletters
+  - Enforces minimum interval per user (`CRON_MIN_INTERVAL_HOURS`, default 12; bypass with `force=true`)
   - Protect with `CRON_SECRET` via `x-cron-secret` or `Authorization: Bearer <secret>`
 - `GET /api/search/semantic?q=...&limit=10`
   - Semantic similarity search across a user's summarized newsletter corpus
@@ -168,7 +172,7 @@ src/
 - Local development defaults to SQLite when `DATABASE_URL` is not set.
 - Production should use PostgreSQL via `DATABASE_URL` (Railway managed Postgres).
 - You can explicitly control provider with `DB_PROVIDER=sqlite|postgres`.
-- Current relational tables: `app_users`, `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`, `newsletter_items`, `ingestion_runs`.
+- Current relational tables: `app_users`, `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`, `newsletter_items`, `ingestion_runs`, `digest_snapshots`.
 
 ### Scheduler setup on Railway
 

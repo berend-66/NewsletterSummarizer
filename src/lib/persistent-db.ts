@@ -139,6 +139,18 @@ async function initPostgres(): Promise<void> {
       UNIQUE(user_id, item_id)
     );
 
+    CREATE TABLE IF NOT EXISTS digest_snapshots (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      days_back INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT,
+      total_newsletters INTEGER NOT NULL DEFAULT 0,
+      digest_payload JSONB NOT NULL,
+      source_run_id BIGINT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       auto_detect BOOLEAN NOT NULL DEFAULT TRUE,
@@ -215,6 +227,8 @@ async function initPostgres(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
     CREATE INDEX IF NOT EXISTS idx_newsletter_items_user_received
       ON newsletter_items(user_id, received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_digest_snapshots_user_days_created
+      ON digest_snapshots(user_id, days_back, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ingestion_runs_user_started
       ON ingestion_runs(user_id, started_at DESC);
   `)
@@ -303,6 +317,18 @@ function initSqlite(): void {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(user_id, item_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS digest_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      days_back INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT,
+      total_newsletters INTEGER NOT NULL DEFAULT 0,
+      digest_payload TEXT NOT NULL,
+      source_run_id INTEGER,
+      created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS user_settings (
@@ -394,6 +420,8 @@ function initSqlite(): void {
     CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
     CREATE INDEX IF NOT EXISTS idx_newsletter_items_user_received
       ON newsletter_items(user_id, received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_digest_snapshots_user_days_created
+      ON digest_snapshots(user_id, days_back, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ingestion_runs_user_started
       ON ingestion_runs(user_id, started_at DESC);
   `)
