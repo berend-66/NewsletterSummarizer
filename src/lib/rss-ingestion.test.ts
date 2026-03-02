@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dedupeNewsletters, parseFeedXml } from './rss-ingestion.ts'
+import { dedupeNewsletters, MAX_NEWSLETTER_CONTENT_BYTES, parseFeedXml } from './rss-ingestion.ts'
 import { getNewsletterDisplayName } from './sender-parser.ts'
 
 test('parses RSS feed and normalizes fields', () => {
@@ -90,4 +90,25 @@ test('normalized newsletter remains compatible with sender display pipeline', ()
   })
 
   assert.equal(displaySender.name, 'Morning Brew Override')
+})
+
+test('caps oversized newsletter content at 2MB', () => {
+  const oversizedText = 'a'.repeat(MAX_NEWSLETTER_CONTENT_BYTES + 4096)
+  const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+  <rss version="2.0">
+    <channel>
+      <title>Large Feed</title>
+      <item>
+        <title>Large Item</title>
+        <link>https://example.com/large</link>
+        <guid>large-1</guid>
+        <pubDate>Mon, 22 Jan 2024 10:00:00 GMT</pubDate>
+        <description>${oversizedText}</description>
+      </item>
+    </channel>
+  </rss>`
+
+  const [newsletter] = parseFeedXml(rssXml, 'https://example.com/large.xml')
+  const byteLength = Buffer.byteLength(newsletter.body.content, 'utf8')
+  assert.equal(byteLength, MAX_NEWSLETTER_CONTENT_BYTES)
 })

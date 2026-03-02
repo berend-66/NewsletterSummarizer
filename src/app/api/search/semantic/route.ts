@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveRuntimeUserId } from '@/lib/runtime-user'
+import { resolveRuntimeUserId, UnauthorizedRuntimeUserError } from '@/lib/runtime-user'
 import { isSemanticSearchConfigured, semanticSearchSummaries } from '@/lib/semantic-search'
 
 export const dynamic = 'force-dynamic'
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const q = request.nextUrl.searchParams.get('q')?.trim() || ''
     const limit = Math.min(parseInt(request.nextUrl.searchParams.get('limit') || '10', 10), 25)
-    const userId = resolveRuntimeUserId(request)
+    const userId = await resolveRuntimeUserId(request)
 
     if (!q) {
       return NextResponse.json({ error: 'Missing query parameter: q' }, { status: 400 })
@@ -28,6 +28,10 @@ export async function GET(request: NextRequest) {
       results,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedRuntimeUserError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('Semantic search error:', error)
     return NextResponse.json({ error: 'Failed semantic search' }, { status: 500 })
   }

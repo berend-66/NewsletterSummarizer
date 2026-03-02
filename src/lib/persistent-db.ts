@@ -90,6 +90,55 @@ async function initPostgres(): Promise<void> {
   }
 
   await activePool.query(`
+    CREATE TABLE IF NOT EXISTS app_users (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ingestion_runs (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      days_back INTEGER NOT NULL,
+      feed_count INTEGER NOT NULL,
+      newsletter_count INTEGER NOT NULL DEFAULT 0,
+      summarized_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      error_text TEXT,
+      started_at TIMESTAMPTZ NOT NULL,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS newsletter_items (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      subject TEXT,
+      sender_name TEXT,
+      sender_email TEXT,
+      received_at TIMESTAMPTZ,
+      body_preview TEXT,
+      body_content TEXT,
+      body_content_type TEXT,
+      source_type TEXT NOT NULL DEFAULT 'rss',
+      feed_url TEXT,
+      feed_title TEXT,
+      item_guid TEXT,
+      item_link TEXT,
+      dedupe_key TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_ingestion_run_id BIGINT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, item_id)
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       auto_detect BOOLEAN NOT NULL DEFAULT TRUE,
@@ -163,6 +212,11 @@ async function initPostgres(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_summaries_user_email ON summaries(user_email);
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
+    CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
+    CREATE INDEX IF NOT EXISTS idx_newsletter_items_user_received
+      ON newsletter_items(user_id, received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ingestion_runs_user_started
+      ON ingestion_runs(user_id, started_at DESC);
   `)
 
   const embeddingType = hasVector ? 'VECTOR(1536)' : 'TEXT'
@@ -202,6 +256,55 @@ async function initPostgres(): Promise<void> {
 function initSqlite(): void {
   const db = getSqliteDb()
   db.exec(`
+    CREATE TABLE IF NOT EXISTS app_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS ingestion_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      days_back INTEGER NOT NULL,
+      feed_count INTEGER NOT NULL,
+      newsletter_count INTEGER NOT NULL DEFAULT 0,
+      summarized_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      error_text TEXT,
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS newsletter_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      subject TEXT,
+      sender_name TEXT,
+      sender_email TEXT,
+      received_at TEXT,
+      body_preview TEXT,
+      body_content TEXT,
+      body_content_type TEXT,
+      source_type TEXT NOT NULL DEFAULT 'rss',
+      feed_url TEXT,
+      feed_title TEXT,
+      item_guid TEXT,
+      item_link TEXT,
+      dedupe_key TEXT,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_ingestion_run_id INTEGER,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, item_id)
+    );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       auto_detect INTEGER NOT NULL DEFAULT 1,
@@ -288,6 +391,11 @@ function initSqlite(): void {
     CREATE INDEX IF NOT EXISTS idx_summaries_received_at ON summaries(received_at);
     CREATE INDEX IF NOT EXISTS idx_feed_health_user ON feed_health(user_id);
     CREATE INDEX IF NOT EXISTS idx_item_embeddings_user ON item_embeddings(user_id);
+    CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users(email);
+    CREATE INDEX IF NOT EXISTS idx_newsletter_items_user_received
+      ON newsletter_items(user_id, received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ingestion_runs_user_started
+      ON ingestion_runs(user_id, started_at DESC);
   `)
 }
 

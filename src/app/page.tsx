@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { demoSummaries, demoDigest } from '@/lib/demo-data'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface NewsletterSummary {
   id: string
@@ -107,6 +108,8 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json()
         setDigestData(data)
+      } else if (res.status === 401) {
+        window.location.href = '/auth/signin'
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -183,6 +186,7 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-2">
+              <ThemeToggle />
               {demoMode ? (
                 <button
                   onClick={exitDemo}

@@ -1,4 +1,4 @@
-import { extractTextFromHtml } from './microsoft-graph'
+import { extractTextFromHtml } from './html-to-text'
 import { CanonicalNewsletter } from './newsletter-model'
 import { getCachedSummary, cacheSummary } from './cache-db'
 import { getNewsletterDisplayName } from './sender-parser'
@@ -32,8 +32,8 @@ export interface CombinedDigest {
 
 // Ollama API client with timeout
 async function callOllama(prompt: string, systemPrompt: string): Promise<string> {
-  const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434'
-  const model = process.env.OLLAMA_MODEL || 'llama3.2'
+  const ollamaUrl = process.env.OLLAMA_URL || '[REDACTED]'
+  const model = process.env.OLLAMA_MODEL || '[REDACTED]'
   const timeoutMs = 180000 // 3 minutes timeout
 
   const controller = new AbortController()

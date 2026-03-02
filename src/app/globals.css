@@ -3,23 +3,40 @@
 @tailwind utilities;
 
 :root {
-  --background-start: #0a1929;
-  --background-end: #102a43;
-  --card-bg: rgba(16, 42, 67, 0.6);
-  --card-border: rgba(98, 125, 152, 0.2);
-  --text-primary: #f0f4f8;
-  --text-secondary: #9fb3c8;
+  --background-start: #f8f1e5;
+  --background-end: #f1e7d4;
+  --background-accent: #e9dcc5;
+  --card-bg: rgba(255, 250, 241, 0.78);
+  --card-border: rgba(145, 117, 86, 0.24);
+  --text-primary: #352a1f;
+  --text-secondary: #6e5840;
   --accent-coral: #ff5252;
   --accent-mint: #00e676;
   --accent-amber: #ffca28;
 }
 
-html {
+html[data-theme='dark'] {
+  --background-start: #0a1929;
+  --background-end: #102a43;
+  --background-accent: #1a365d;
+  --card-bg: rgba(16, 42, 67, 0.6);
+  --card-border: rgba(98, 125, 152, 0.2);
+  --text-primary: #f0f4f8;
+  --text-secondary: #9fb3c8;
   color-scheme: dark;
 }
 
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
 body {
-  background: linear-gradient(145deg, var(--background-start) 0%, var(--background-end) 50%, #1a365d 100%);
+  background: linear-gradient(
+    145deg,
+    var(--background-start) 0%,
+    var(--background-end) 50%,
+    var(--background-accent) 100%
+  );
   min-height: 100vh;
   color: var(--text-primary);
 }
@@ -67,6 +84,45 @@ body {
     radial-gradient(at 0% 50%, rgba(255, 202, 40, 0.08) 0px, transparent 50%),
     radial-gradient(at 80% 50%, rgba(98, 125, 152, 0.1) 0px, transparent 50%),
     radial-gradient(at 0% 100%, rgba(255, 82, 82, 0.08) 0px, transparent 50%);
+}
+
+html[data-theme='light'] .mesh-bg {
+  background-image:
+    radial-gradient(at 40% 20%, rgba(204, 143, 84, 0.16) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(190, 170, 120, 0.14) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, rgba(224, 173, 123, 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, rgba(169, 141, 108, 0.1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(202, 150, 96, 0.1) 0px, transparent 50%);
+}
+
+/* Light theme utility class remapping for existing ink palette usage */
+html[data-theme='light'] [class*='text-ink-'] {
+  color: #3f3225 !important;
+}
+
+html[data-theme='light'] [class*='bg-ink-'] {
+  background-color: rgba(248, 238, 223, 0.82) !important;
+}
+
+html[data-theme='light'] [class*='border-ink-'] {
+  border-color: rgba(145, 117, 86, 0.28) !important;
+}
+
+html[data-theme='light'] .tag-default {
+  background: rgba(192, 157, 112, 0.22);
+  color: #5b4631;
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-track {
+  background: rgba(160, 130, 97, 0.2);
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(160, 130, 97, 0.45);
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 130, 97, 0.7);
 }
 
 /* Shimmer loading effect */

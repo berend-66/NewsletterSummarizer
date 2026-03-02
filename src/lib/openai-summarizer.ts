@@ -1,12 +1,35 @@
 import OpenAI from 'openai'
-import { extractTextFromHtml } from './microsoft-graph'
+import { extractTextFromHtml } from './html-to-text'
 import { CanonicalNewsletter } from './newsletter-model'
 
 // Lazy-load OpenAI client to avoid build-time initialization
 function getOpenAIClient(): OpenAI {
+  const forceOpenRouter = process.env.SUMMARIZER_OPENROUTER === 'true'
+  const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY)
+  const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY)
+  const useOpenRouter = forceOpenRouter || (hasOpenRouterKey && !hasOpenAiKey)
+  const apiKey = useOpenRouter ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY
+
+  if (!apiKey) {
+    throw new Error('No API key configured for summarization provider')
+  }
+
   return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey,
+    baseURL: useOpenRouter
+      ? process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+      : process.env.OPENAI_BASE_URL,
+    defaultHeaders: useOpenRouter
+      ? {
+          'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'https://newsletter-digest.local',
+          'X-Title': process.env.OPENROUTER_APP_NAME || 'Newsletter Digest',
+        }
+      : undefined,
   })
+}
+
+function resolveSummaryModel(): string {
+  return process.env.SUMMARIZER_MODEL || 'gpt-5-mini'
 }
 
 export interface NewsletterSummary {
@@ -64,7 +87,7 @@ Focus on extracting actionable insights and the most important information. Keep
   try {
     const openai = getOpenAIClient()
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: resolveSummaryModel(),
       messages: [
         {
           role: 'system',
@@ -141,7 +164,7 @@ Identify 2-4 major themes that appear across multiple newsletters. Extract the t
   try {
     const openai = getOpenAIClient()
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: resolveSummaryModel(),
       messages: [
         {
           role: 'system',

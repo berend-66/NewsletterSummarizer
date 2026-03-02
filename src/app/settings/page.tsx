@@ -15,6 +15,7 @@ import {
   Edit3,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface UserSettings {
   userId: string
@@ -66,6 +67,9 @@ export default function SettingsPage() {
         if (res.ok) {
           const data = await res.json()
           setSettings(data)
+        } else if (res.status === 401) {
+          window.location.href = '/auth/signin'
+          return
         } else {
           const errorData = await res.json().catch(() => ({}))
           setLoadError(errorData.error || 'Failed to load settings')
@@ -210,17 +214,20 @@ export default function SettingsPage() {
     <div className="min-h-screen mesh-bg">
       {/* Header */}
       <header className="border-b border-ink-700/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-4">
-          <Link
-            href="/"
-            className="p-2 rounded-lg hover:bg-ink-800/50 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-ink-300" />
-          </Link>
-          <div>
-            <h1 className="font-display font-bold text-lg">Settings</h1>
-            <p className="text-xs text-ink-400">Configure your newsletter digest</p>
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Link
+              href="/"
+              className="p-2 rounded-lg hover:bg-ink-800/50 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-ink-300" />
+            </Link>
+            <div>
+              <h1 className="font-display font-bold text-lg">Settings</h1>
+              <p className="text-xs text-ink-400">Configure your newsletter digest</p>
+            </div>
           </div>
+          <ThemeToggle />
         </div>
       </header>
 

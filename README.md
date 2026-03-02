@@ -8,12 +8,14 @@ The project now ingests newsletters directly from RSS feeds instead of email for
 
 ## Features
 
+- Invite-only account auth (email/password + shared invite code)
 - RSS/Atom ingestion across multiple feeds
 - Canonical newsletter normalization for downstream summarization
 - Dedupe/idempotency via guid/link/content hash
 - AI summaries for each item
 - Cross-newsletter themes/highlights/action items
-- Persistent user-owned feed configuration (PostgreSQL)
+- Persistent user-owned feed configuration
+- Durable storage for raw newsletter items + ingestion run logs
 - Feed health metrics per user/feed
 - Scheduler endpoint for automated digest runs
 
@@ -22,7 +24,8 @@ The project now ingests newsletters directly from RSS feeds instead of email for
 ### Prerequisites
 
 - Node.js 18+
-- Ollama running locally (or remote endpoint)
+- One hosted model API key (OpenAI or OpenRouter)
+- Optional: Ollama running locally (legacy fallback path)
 
 ### 1) Install
 
@@ -38,9 +41,31 @@ Create `.env.local`:
 # Optional: comma-separated RSS feed URLs
 RSS_FEEDS=https://example.com/feed.xml,https://another.com/rss
 
-# Ollama config
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
+# Invite-only account signup
+INVITE_CODE=shared-invite-code-for-your-team
+NEXTAUTH_SECRET=generate-a-long-random-string
+
+# Summarization provider selection
+# openai (default when OPENAI_API_KEY or OPENROUTER_API_KEY is present)
+# ollama (legacy fallback)
+SUMMARIZER_PROVIDER=openai
+SUMMARIZER_MODEL=gpt-5-mini
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# OpenRouter (optional alternative to OpenAI key)
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_HTTP_REFERER=https://newsletter-digest.local
+OPENROUTER_APP_NAME=Newsletter Digest
+
+# Optional OpenAI-compatible base URL override
+OPENAI_BASE_URL=
+
+# Optional Ollama fallback
+OLLAMA_URL=[REDACTED]
+OLLAMA_MODEL=[REDACTED]
 OLLAMA_CONCURRENCY=2
 
 # Optional: lock down cron endpoint
@@ -82,8 +107,8 @@ Open `http://localhost:3000`.
 ### User ownership model
 
 - Each user owns their own `rssFeeds`, filters, overrides, and feed health rows.
-- User identity is resolved via `x-user-id` header (defaults to `local-user` in local mode).
-- This allows multi-user isolation even without Microsoft Graph ingestion.
+- Signed-in users are keyed by account email.
+- Local development can still use `x-user-id` fallback headers when no session is present.
 
 ### API
 
@@ -143,7 +168,7 @@ src/
 - Local development defaults to SQLite when `DATABASE_URL` is not set.
 - Production should use PostgreSQL via `DATABASE_URL` (Railway managed Postgres).
 - You can explicitly control provider with `DB_PROVIDER=sqlite|postgres`.
-- Current relational tables: `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`.
+- Current relational tables: `app_users`, `user_settings`, `user_feeds`, `user_feed_filters`, `user_sender_overrides`, `feed_health`, `summaries`, `newsletter_items`, `ingestion_runs`.
 
 ### Scheduler setup on Railway
 
@@ -164,6 +189,7 @@ Run:
 npm run test
 npm run lint
 npm run build
+npm run smoke:e2e
 ```
 
 ## Troubleshooting
@@ -184,6 +210,10 @@ npm run build
 ### Duplicate entries
 
 - Dedupe uses guid/link/content hash; if a publisher republishes with distinct metadata/content, entries may be treated as unique
+
+### Large newsletter payloads
+
+- Item content is capped at 2MB per newsletter to guard against unbounded or abusive payload sizes.
 
 ## Known limitations
 
